@@ -1,0 +1,58 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "plugins/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/ludovic111/nori"
+# The highest any dependency asks for: oo7 0.6 (GPUI's Linux keyring, through gpui_linux) needs 1.92.
+rust-version = "1.92"
+
+[workspace.dependencies]
+nori-core = { path = "crates/nori-core" }
+nori-render = { path = "crates/nori-render" }
+nori-io = { path = "crates/nori-io" }
+nori-control = { path = "crates/nori-control" }
+nori-agent = { path = "crates/nori-agent" }
+nori-cli = { path = "crates/nori-cli" }
+nori-plugin = { path = "crates/nori-plugin" }
+
+anyhow = "1"
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6"
+futures = "0.3"
+image = { version = "0.25.1", default-features = false, features = ["png", "jpeg", "webp", "tiff", "bmp", "gif"] }
+libloading = "0.8"
+parking_lot = "0.12"
+rayon = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "gzip"] }
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs", "process", "io-util", "net"] }
+tokio-util = "0.7"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+url = "2"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+wiremock = "0.6"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+# Compositing and filters run on every stroke: even debug builds need them optimised.
+[profile.dev.package.nori-render]
+opt-level = 3
+[profile.dev.package.nori-core]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

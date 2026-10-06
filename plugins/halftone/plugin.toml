@@ -1,0 +1,13 @@
+id = "xyz.lsuite.nori.halftone"
+name = "Halftone"
+version = "0.1.0"
+app = "nori"
+kind = "filter"
+abi = 1
+description = "Turns tones into dots on a grid, like a printed newspaper photo."
+authors = ["lsuite"]
+
+[library]
+macos = "libnori_halftone.dylib"
+linux = "libnori_halftone.so"
+windows = "nori_halftone.dll"

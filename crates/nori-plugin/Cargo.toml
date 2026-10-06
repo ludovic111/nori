@@ -1,0 +1,8 @@
+[package]
+name = "nori-plugin"
+description = "The nori plugin SDK: a frozen C ABI for filters that work on RGBA f32 tiles with typed parameters"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]

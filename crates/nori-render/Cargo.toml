@@ -1,0 +1,18 @@
+[package]
+name = "nori-render"
+description = "nori's renderer: tiled compositing, blend modes, adjustments, filters, the brush engine, transforms and text"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nori-core.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+cosmic-text = "0.19"
+tiny-skia = "0.11"
+i_overlay = "9"
+
+[dev-dependencies]
+image.workspace = true

@@ -1,0 +1,226 @@
+//! Anthropic Messages API: streamed text and tool use over server-sent events. lsuite AI
+//! speaks it too, at `<server>/api/ai` with the account's token as the key.
+//!
+//! Thinking blocks (on by default on current models) are kept verbatim as
+//! [`Part::Opaque`] and replayed unchanged, as the API requires within a tool
+//! loop; the system prompt and tool list never change during a conversation so
+//! the replayed blocks stay valid and the prompt cache holds.
+
+use serde_json::{Value, json};
+
+use super::{Api, Call, Step, parse_args};
+use crate::http::{self, Lines};
+use crate::status::Action;
+use crate::tools::ToolSet;
+use crate::{Message, Part, ProviderKind, Role, Run, ToolDef};
+
+const VERSION: &str = "2023-06-01";
+const MAX_TOKENS: u32 = 32_000;
+
+fn tools(defs: &[ToolDef]) -> Vec<Value> {
+    defs.iter().map(|t| json!({ "name": t.name, "description": t.description, "input_schema": t.schema })).collect()
+}
+
+fn image(media_type: &str, data: &str) -> Value {
+    json!({ "type": "image", "source": { "type": "base64", "media_type": media_type, "data": data } })
+}
+
+/// Pictures go inside the tool result they belong to; a result without one keeps its plain
+/// text, so threads from before pictures replay unchanged.
+pub(super) fn wire(messages: &[Message]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|m| {
+            let results: Vec<&str> = m.parts.iter().filter_map(|p| if let Part::ToolResult { id, .. } = p { Some(id.as_str()) } else { None }).collect();
+            let mut content: Vec<Value> = m
+                .parts
+                .iter()
+                .filter_map(|p| match p {
+                    Part::Text { text } if text.is_empty() => None,
+                    Part::Text { text } => Some(json!({ "type": "text", "text": text })),
+                    Part::ToolUse { id, name, input } => Some(json!({ "type": "tool_use", "id": id, "name": name, "input": input })),
+                    Part::ToolResult { id, output, is_error, .. } => {
+                        let pictures: Vec<Value> = m
+                            .parts
+                            .iter()
+                            .filter_map(|p| match p {
+                                Part::Image { call: Some(c), media_type, data } if c == id => Some(image(media_type, data)),
+                                _ => None,
+                            })
+                            .collect();
+                        let content = if pictures.is_empty() {
+                            json!(output)
+                        } else {
+                            json!(std::iter::once(json!({ "type": "text", "text": output })).chain(pictures).collect::<Vec<_>>())
+                        };
+                        Some(json!({ "type": "tool_result", "tool_use_id": id, "content": content, "is_error": is_error }))
+                    }
+                    Part::Image { call: Some(c), .. } if results.contains(&c.as_str()) => None,
+                    Part::Image { media_type, data, .. } => Some(image(media_type, data)),
+                    // lsuite AI is Anthropic's API: their thinking blocks replay to either.
+                    Part::Opaque { provider: ProviderKind::Anthropic | ProviderKind::Lsuite, block } => Some(block.clone()),
+                    Part::Opaque { .. } => None,
+                })
+                .collect();
+            if content.is_empty() {
+                content.push(json!({ "type": "text", "text": "…" }));
+            }
+            json!({ "role": if m.role == Role::User { "user" } else { "assistant" }, "content": content })
+        })
+        .collect()
+}
+
+/// A content block being streamed.
+enum Block {
+    Text(String),
+    Tool { id: String, name: String, json: String },
+    /// Thinking and anything else: the start skeleton plus its deltas.
+    Other { block: Value, thinking: String, signature: String },
+}
+
+pub(super) async fn step(api: &Api, run: &Run, set: &ToolSet, messages: &[Message]) -> Result<Step, String> {
+    let mut body = json!({
+        "model": api.model,
+        "max_tokens": MAX_TOKENS,
+        "system": set.system_prompt(),
+        "tools": tools(&set.defs),
+        "messages": wire(messages),
+        "stream": true,
+    });
+    if api.base == ProviderKind::Anthropic.default_base_url() || api.kind == ProviderKind::Lsuite {
+        // Caches the conversation so far for the next round of the loop.
+        body["cache_control"] = json!({ "type": "ephemeral" });
+    }
+    let key = api.key.clone().unwrap_or_default();
+    let url = format!("{}/v1/messages", api.base);
+    let label = api.label();
+    let response = match http::post(&run.cancel, &label, || api.http.post(&url).header("x-api-key", &key).header("anthropic-version", VERSION), &body).await {
+        Ok(r) => r,
+        Err(e) => {
+            run.set_action(action_for(api.kind, e.manage_url.as_deref(), e.status));
+            return Err(e.message);
+        }
+    };
+
+    let mut lines = Lines::new(response);
+    let mut blocks: Vec<Block> = vec![];
+    let mut stop_reason = String::new();
+    let mut stop_details = Value::Null;
+    let (mut input_tokens, mut output_tokens) = (0, 0);
+    let mut completed = false;
+    while let Some(data) = lines.next_sse().await? {
+        let event: Value = match serde_json::from_str(&data) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        match event["type"].as_str().unwrap_or("") {
+            "message_start" => {
+                let u = &event["message"]["usage"];
+                input_tokens = u["input_tokens"].as_u64().unwrap_or(0) + u["cache_read_input_tokens"].as_u64().unwrap_or(0) + u["cache_creation_input_tokens"].as_u64().unwrap_or(0);
+            }
+            "content_block_start" => {
+                let index = event["index"].as_u64().unwrap_or(blocks.len() as u64) as usize;
+                let b = &event["content_block"];
+                let block = match b["type"].as_str().unwrap_or("") {
+                    "text" => {
+                        let t = b["text"].as_str().unwrap_or("").to_string();
+                        run.text(&t);
+                        Block::Text(t)
+                    }
+                    "tool_use" => {
+                        Block::Tool { id: b["id"].as_str().unwrap_or("").into(), name: b["name"].as_str().unwrap_or("").into(), json: String::new() }
+                    }
+                    _ => Block::Other { block: b.clone(), thinking: String::new(), signature: String::new() },
+                };
+                if index >= blocks.len() {
+                    blocks.push(block);
+                } else {
+                    blocks[index] = block;
+                }
+            }
+            "content_block_delta" => {
+                let index = event["index"].as_u64().unwrap_or(0) as usize;
+                let d = &event["delta"];
+                match (blocks.get_mut(index), d["type"].as_str().unwrap_or("")) {
+                    (Some(Block::Text(t)), "text_delta") => {
+                        let delta = d["text"].as_str().unwrap_or("");
+                        t.push_str(delta);
+                        run.text(delta);
+                    }
+                    (Some(Block::Tool { json, .. }), "input_json_delta") => json.push_str(d["partial_json"].as_str().unwrap_or("")),
+                    (Some(Block::Other { thinking, .. }), "thinking_delta") => thinking.push_str(d["thinking"].as_str().unwrap_or("")),
+                    (Some(Block::Other { signature, .. }), "signature_delta") => signature.push_str(d["signature"].as_str().unwrap_or("")),
+                    _ => {}
+                }
+            }
+            "message_delta" => {
+                if let Some(r) = event["delta"]["stop_reason"].as_str() {
+                    stop_reason = r.to_string();
+                }
+                stop_details = event["delta"]["stop_details"].clone();
+                output_tokens = event["usage"]["output_tokens"].as_u64().unwrap_or(output_tokens);
+            }
+            "message_stop" => {
+                completed = true;
+                break;
+            }
+            "error" => {
+                let e = &event["error"];
+                let message = e["message"].as_str().unwrap_or("unknown");
+                if let Some(manage) = e["manage_url"].as_str() {
+                    run.set_action(action_for(api.kind, Some(manage), None));
+                    return Err(message.to_string());
+                }
+                return Err(format!("{label} error: {message}"));
+            }
+            _ => {}
+        }
+    }
+    run.usage(input_tokens, output_tokens);
+    if !completed {
+        return Err(format!("The {label} response stopped before it was complete. Try again."));
+    }
+    match stop_reason.as_str() {
+        "max_tokens" => return Err("The reply reached its length limit; no unfinished command was run. Ask for less at a time.".into()),
+        "refusal" => {
+            let why = stop_details["explanation"].as_str().map(|e| format!(" ({e})")).unwrap_or_default();
+            return Err(format!("The model declined this request{why}."));
+        }
+        _ => {}
+    }
+
+    let mut parts = vec![];
+    let mut calls = vec![];
+    for block in blocks {
+        match block {
+            Block::Text(text) => parts.push(Part::Text { text }),
+            Block::Tool { id, name, json } => {
+                let input = parse_args(&json);
+                parts.push(Part::ToolUse { id: id.clone(), name: name.clone(), input: input.clone().unwrap_or_else(|_| json!({})) });
+                calls.push(Call { id, name, input });
+            }
+            Block::Other { mut block, thinking, signature } => {
+                if block["type"] == "thinking" {
+                    block["thinking"] = json!(format!("{}{thinking}", block["thinking"].as_str().unwrap_or("")));
+                    if !signature.is_empty() {
+                        block["signature"] = json!(signature);
+                    }
+                }
+                parts.push(Part::Opaque { provider: api.kind, block });
+            }
+        }
+    }
+    if stop_reason != "tool_use" {
+        calls.clear();
+    }
+    Ok(Step { parts, calls })
+}
+
+/// What the person can do about a refused request: manage the lsuite plan, or sign in again.
+fn action_for(kind: ProviderKind, manage_url: Option<&str>, status: Option<u16>) -> Option<Action> {
+    match (manage_url, status) {
+        (Some(url), _) => Action::link("Manage plan", url),
+        (None, Some(401)) if kind == ProviderKind::Lsuite => Action::call("Sign in to lsuite AI", "account.signIn"),
+        _ => None,
+    }
+}

@@ -1,0 +1,13 @@
+[package]
+name = "nori-halftone"
+description = "Example nori plugin: a print halftone of round dots on a grid"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nori-plugin = { path = "../../crates/nori-plugin" }

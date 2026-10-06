@@ -1,0 +1,13 @@
+[package]
+name = "nori-duotone"
+description = "Example nori plugin: maps dark tones to one colour and light tones to another"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+nori-plugin = { path = "../../crates/nori-plugin" }

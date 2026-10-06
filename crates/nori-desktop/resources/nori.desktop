@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=nori
+GenericName=Image Editor
+Comment=Image, vector and layout editor in layers
+Exec=nori %F
+Icon=nori
+Terminal=false
+Categories=Graphics;2DGraphics;RasterGraphics;VectorGraphics;Publishing;
+MimeType=application/x-nori;image/png;image/jpeg;image/webp;image/tiff;image/vnd.adobe.photoshop;image/svg+xml;image/openraster;
+Keywords=image;photo;vector;layout;layers;editor;
+StartupWMClass=nori

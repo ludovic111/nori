@@ -1,0 +1,13 @@
+id = "xyz.lsuite.nori.duotone"
+name = "Duotone"
+version = "0.1.0"
+app = "nori"
+kind = "filter"
+abi = 1
+description = "Maps dark tones to one colour and light tones to another."
+authors = ["lsuite"]
+
+[library]
+macos = "libnori_duotone.dylib"
+linux = "libnori_duotone.so"
+windows = "nori_duotone.dll"

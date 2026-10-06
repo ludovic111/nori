@@ -1,0 +1,23 @@
+[package]
+name = "nori-io"
+description = "nori's files: pictures in and out, PSD and OpenRaster layers, SVG vectors in and out, PDF out, brushes and swatches"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nori-core.workspace = true
+nori-render.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+psd = "0.3"
+quick-xml = "0.38"
+base64.workspace = true
+tiny-skia = "0.11"
+usvg = "0.46"
+krilla = "0.8"
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,23 @@
+[package]
+name = "nori-cli"
+description = "nori from the terminal: every registry command, on the running app or on a .nori file"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "nori_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nori-cli"
+path = "src/main.rs"
+
+[dependencies]
+nori-control.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+nori-core.workspace = true
+tempfile.workspace = true

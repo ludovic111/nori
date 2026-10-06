@@ -1,0 +1,18 @@
+[package]
+name = "nori-core"
+description = "nori's document model: canvas, layers, masks, selection, one undo history, the .nori file format"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

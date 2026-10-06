@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for nori.app/Contents/Info.plist (the bundle script fills in @VERSION@).
+     nori owns .nori documents and opens the usual image files as an alternative to the
+     system's own viewer. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleDisplayName</key><string>nori</string>
+  <key>CFBundleExecutable</key><string>nori</string>
+  <key>CFBundleIconFile</key><string>nori</string>
+  <key>CFBundleIdentifier</key><string>xyz.lsuite.nori</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>nori</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+  <key>CFBundleVersion</key><string>@VERSION@</string>
+  <key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
+  <key>LSApplicationCategoryType</key><string>public.app-category.graphics-design</string>
+  <!-- GPUI needs 10.15.7; 11 is what the lsuite apps require. -->
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+  <key>NSRequiresAquaSystemAppearance</key><false/>
+  <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>NSHumanReadableCopyright</key><string>MIT licence. Part of lsuite.</string>
+  <key>NSDesktopFolderUsageDescription</key><string>nori opens and saves images and documents you choose on your Desktop.</string>
+  <key>NSDocumentsFolderUsageDescription</key><string>nori opens and saves images and documents you choose in Documents.</string>
+  <key>NSDownloadsFolderUsageDescription</key><string>nori opens images you choose in Downloads.</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>nori opens images you choose on external drives and cards.</string>
+  <key>NSNetworkVolumesUsageDescription</key><string>nori opens images you choose on network drives.</string>
+
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>nori document</string>
+      <key>CFBundleTypeRole</key><string>Editor</string>
+      <key>LSHandlerRank</key><string>Owner</string>
+      <key>CFBundleTypeIconFile</key><string>nori</string>
+      <key>LSItemContentTypes</key><array><string>xyz.lsuite.nori.document</string></array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>Image</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.png</string>
+        <string>public.jpeg</string>
+        <string>org.webmproject.webp</string>
+        <string>public.tiff</string>
+        <string>com.adobe.photoshop-image</string>
+        <string>public.svg-image</string>
+        <string>org.openraster.ora</string>
+      </array>
+    </dict>
+  </array>
+
+  <key>UTExportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key><string>xyz.lsuite.nori.document</string>
+      <key>UTTypeDescription</key><string>nori document</string>
+      <key>UTTypeIconFile</key><string>nori</string>
+      <key>UTTypeConformsTo</key><array><string>public.data</string><string>public.content</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>nori</string></array>
+        <key>public.mime-type</key><array><string>application/x-nori</string></array>
+      </dict>
+    </dict>
+  </array>
+
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key><string>org.openraster.ora</string>
+      <key>UTTypeDescription</key><string>OpenRaster image</string>
+      <key>UTTypeConformsTo</key><array><string>public.image</string><string>public.data</string></array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key><array><string>ora</string></array>
+        <key>public.mime-type</key><array><string>image/openraster</string></array>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

@@ -1,0 +1,130 @@
+name: Release
+
+# A tag v<version> builds the macOS app (Apple Silicon and Intel), the Linux and Windows binaries,
+# and publishes them on the GitHub release with stable names (lsuite.xyz/nori/download/<platform>
+# looks for them). Secrets (none are set yet): APPLE_CERTIFICATE (base64 .p12),
+# APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_API_KEY, APPLE_API_ISSUER,
+# APPLE_API_KEY_CONTENT. Without them the macOS build is ad-hoc signed and not notarized.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  macos:
+    name: macOS (${{ matrix.target }})
+    runs-on: macos-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Signing keychain
+        if: env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          mkdir -p ~/private_keys && echo "$APPLE_API_KEY_CONTENT" > ~/private_keys/api.p8
+          echo "APPLE_API_KEY_PATH=$HOME/private_keys/api.p8" >> "$GITHUB_ENV"
+      - name: Build and bundle
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: bash scripts/bundle-macos.sh ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.target }}
+          path: |
+            target/dist/*.dmg
+            target/dist/*.app.tar.gz
+
+  linux:
+    name: Linux
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config clang libasound2-dev libdbus-1-dev libfontconfig-dev libfreetype-dev \
+            libssl-dev libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libzstd-dev libglib2.0-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked -p nori -p nori-cli -p nori-mcp
+      - name: Package
+        run: |
+          mkdir -p dist/nori
+          cp target/release/nori target/release/nori-cli target/release/nori-mcp dist/nori/
+          cp crates/nori-desktop/resources/nori.png crates/nori-desktop/resources/nori.desktop dist/nori/
+          tar -C dist -czf dist/nori_linux_x64.tar.gz nori
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/nori_linux_x64.tar.gz
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked -p nori -p nori-cli -p nori-mcp
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist/nori
+          cp target/release/nori.exe target/release/nori-cli.exe target/release/nori-mcp.exe dist/nori/
+          cd dist && 7z a nori_windows_x64.zip nori
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/nori_windows_x64.zip
+
+  release:
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Notes
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          awk -v v="$v" '/^## /{p = index($0, v) > 0; next} p' CHANGELOG.md > notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          prerelease: true
+          files: artifacts/**/*
