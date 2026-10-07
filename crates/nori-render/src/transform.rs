@@ -228,8 +228,9 @@ pub fn affine(r: &Raster, x: i32, y: i32, sx: f32, sy: f32, degrees: f32, cx: f3
         x1 = x1.max(a);
         y1 = y1.max(b);
     }
-    let (ox, oy) = (x0.floor() as i32, y0.floor() as i32);
-    let (nw, nh) = (((x1.ceil() as i32 - ox).max(1)) as u32, ((y1.ceil() as i32 - oy).max(1)) as u32);
+    // Snapped so float error in sin/cos doesn't add a pixel.
+    let (ox, oy) = ((x0 + 1e-3).floor() as i32, (y0 + 1e-3).floor() as i32);
+    let (nw, nh) = ((((x1 - 1e-3).ceil() as i32 - ox).max(1)) as u32, (((y1 - 1e-3).ceil() as i32 - oy).max(1)) as u32);
     let (nw, nh) = (nw.min(nori_core::MAX_SIDE), nh.min(nori_core::MAX_SIDE));
     // Shrinking a lot: resample to size first, so the rotation samples a picture of the right
     // scale (no aliasing).

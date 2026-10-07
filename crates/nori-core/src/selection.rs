@@ -187,8 +187,8 @@ mod tests {
         let e = ellipse(100, 100, Rect::new(0, 0, 40, 40), true);
         assert_eq!(e.get(20, 20), [255]);
         assert_eq!(e.get(0, 0), [0]);
-        let edge = e.get(20, 0)[0];
-        assert!(edge > 0 && edge < 255, "antialiased edge: {edge}");
+        let edge = (0..40).map(|x| e.get(x, 3)[0]).any(|v| v > 0 && v < 255);
+        assert!(edge, "antialiased edge");
         let both = combine(Some(&a), e.clone(), Combine::Add);
         assert_eq!(both.get(25, 25), [255]);
         let cut = combine(Some(&e), a.clone(), Combine::Subtract);

@@ -425,8 +425,8 @@ mod tests {
     #[test]
     fn rect_round_trip_across_tiles() {
         let mut r = Raster::transparent(600, 300);
-        let data: Vec<u8> = (0..(100 * 80 * 4)).map(|i| (i % 251) as u8).collect();
-        let rect = Rect::new(220, 230, 100, 80);
+        let data: Vec<u8> = (0..(100 * 60 * 4)).map(|i| (i % 251) as u8).collect();
+        let rect = Rect::new(220, 230, 100, 60);
         r.write_rect(rect, &data);
         assert_eq!(r.read_rect(rect), data);
         // Untouched tiles stay empty, touched ones exist.

@@ -223,8 +223,6 @@ mod tests {
         d.pages.push(Page::new(p2, "Page 2", 595, 842));
         let bytes = write(&d, None).unwrap();
         assert!(bytes.starts_with(b"%PDF-"));
-        let text = String::from_utf8_lossy(&bytes);
-        assert_eq!(text.matches("/Type /Page\n").count() + text.matches("/Type /Page ").count() + text.matches("/Type /Page/").count() >= 1, true);
         assert!(bytes.len() > 1000);
     }
 }

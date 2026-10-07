@@ -468,7 +468,8 @@ mod tests {
         let star = Geometry::Polygon { cx: 0.0, cy: 0.0, radius: 10.0, sides: 5, inner: Some(0.5), rotation: 0.0 };
         assert_eq!(star.segments().len(), 11);
         // The first point of a polygon is at the top.
-        assert_eq!(star.segments()[0], Seg::Move([0.0, -10.0]));
+        let Seg::Move(p) = star.segments()[0] else { panic!() };
+        assert!(p[0].abs() < 1e-4 && (p[1] + 10.0).abs() < 1e-4);
     }
 
     #[test]
