@@ -957,7 +957,7 @@ async fn unreadable_history_is_never_overwritten() {
 
 #[test]
 fn the_context_block_frames_a_request_and_comes_off_again() {
-    let g = Glance { lines: vec!["What the person sees:".into(), "Active layer: \"Sky\".".into()], short: "\"Sky\"".into() };
+    let g = Glance { lines: vec!["What the person sees:".into(), "Active layer: \"Sky\".".into()], short: "\"Sky\"".into(), seq: 0, changes: vec![] };
     let framed = g.frame("Make it darker");
     assert_eq!(framed, "<context>\nWhat the person sees:\nActive layer: \"Sky\".\n</context>\n\nMake it darker");
     assert_eq!(context::unframed(&framed), "Make it darker");
