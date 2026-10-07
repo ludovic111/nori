@@ -22,6 +22,10 @@ use gpui::{App, AppContext as _, Bounds, TitlebarOptions, WindowBackgroundAppear
 use nori_control::{Session, SessionOptions};
 
 fn main() {
+    if std::env::args().any(|arg| arg == "--version" || arg == "-V") {
+        println!("nori {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     let data_dir = nori_control::session::default_data_dir();
     let config_dir = nori_control::session::default_config_dir();
     let level = nori_control::Settings::load(&config_dir).diagnostics.log_level;

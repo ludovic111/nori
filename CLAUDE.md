@@ -114,3 +114,10 @@ lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `AI.md`, `desi
 - [ ] Not done: tabs (several documents), smart objects, a curves graph editor (presets and
       `layer.setAdjustment` only), selectable text in PDF, PSD and IDML export, XCF and `.ai`
       import, pen pressure from tablets (the engine takes pressure; the window sends 1).
+
+## Verified local beta (2026-10-07)
+
+App names are always lowercase in UI and documentation. Apple silicon bundles were built on
+macmini under `~/builds/lsuite-2026-10-07/` and smoke-tested through their bundled CLIs. These
+are local ad-hoc-signed builds; public release, notarization and signed in-place updates remain
+separate release work. Linux workspace tests and clippy passed (existing warnings remain).
