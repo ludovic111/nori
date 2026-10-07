@@ -8,7 +8,7 @@ use crate::store::{MenuItem, ShapeKind, Store, StoreExt, Tool};
 use crate::theme::{ActiveTheme, MONO, size as sz};
 use crate::ui::input::{InputEvent, TextInput};
 use crate::ui::scrub::{Scrub, ScrubChange};
-use crate::ui::{Button, caps, group, icon};
+use crate::ui::{Button, GlassExt, caps, group, icon};
 
 pub struct ToolColumn {
     store: Entity<Store>,
@@ -177,7 +177,7 @@ impl OptionsBar {
             i
         });
         let mut subs = vec![cx.observe(&store, |this: &mut Self, store, cx| {
-            this.sync(store.read(cx), cx);
+            this.sync(cx);
             cx.notify()
         })];
         // Each field sets its tool setting (a drag folds into one change).
@@ -204,7 +204,7 @@ impl OptionsBar {
             }
         }));
         let mut this = Self { store: store.clone(), size, hardness, opacity, flow, tolerance, stroke_width, font_size, hex, _subs: subs };
-        this.sync(store.read(cx), cx);
+        this.sync(cx);
         this
     }
 
@@ -217,9 +217,12 @@ impl OptionsBar {
         format!("tools.{which}.{key}")
     }
 
-    fn sync(&mut self, s: &Store, cx: &mut Context<Self>) {
-        let tools = &s.settings.tools;
-        let b = if s.tool == Tool::Eraser { &tools.eraser } else { &tools.brush };
+    fn sync(&mut self, cx: &mut Context<Self>) {
+        let (tools, tool, fg) = {
+            let s = self.store.read(cx);
+            (s.settings.tools.clone(), s.tool, s.colors.foreground)
+        };
+        let b = if tool == Tool::Eraser { &tools.eraser } else { &tools.brush };
         self.size.update(cx, |x, _| x.set_value(b.size as f64));
         self.hardness.update(cx, |x, _| x.set_value((b.hardness * 100.0) as f64));
         self.opacity.update(cx, |x, _| x.set_value((b.opacity * 100.0) as f64));
@@ -227,7 +230,7 @@ impl OptionsBar {
         self.tolerance.update(cx, |x, _| x.set_value(tools.tolerance));
         self.stroke_width.update(cx, |x, _| x.set_value(tools.shape_stroke_width));
         self.font_size.update(cx, |x, _| x.set_value(tools.font_size));
-        let hex = s.colors.foreground.hex();
+        let hex = fg.hex();
         let focused = false;
         if !focused {
             self.hex.update(cx, |i, cx| i.set_text(hex, cx));

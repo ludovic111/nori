@@ -5,7 +5,6 @@ pub mod drag;
 pub mod fold;
 pub mod grain;
 pub mod input;
-pub mod layout;
 pub mod logos;
 pub mod markdown;
 pub mod scrub;

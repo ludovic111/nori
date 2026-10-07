@@ -115,7 +115,7 @@ fn story(xml: &str, colors: &HashMap<String, Color>) -> (String, Story) {
     let mut in_font = false;
     let mut first = true;
     while let Ok(ev) = r.read_event() {
-        match ev {
+        match &ev {
             Event::Start(e) | Event::Empty(e) => {
                 let name = e.name();
                 match name.as_ref() {
@@ -146,8 +146,19 @@ fn story(xml: &str, colors: &HashMap<String, Color>) -> (String, Story) {
                     _ => {}
                 }
             }
-            Event::Text(t) => {
-                let text = t.unescape().map(|c| c.into_owned()).unwrap_or_default();
+            Event::Text(_) | Event::GeneralRef(_) => {
+                let text = match &ev {
+                    Event::Text(t) => t.decode().map(|c| c.into_owned()).unwrap_or_default(),
+                    Event::GeneralRef(r) => match r.decode().unwrap_or_default().as_ref() {
+                        "amp" => "&".into(),
+                        "lt" => "<".into(),
+                        "gt" => ">".into(),
+                        "quot" => "\"".into(),
+                        "apos" => "'".into(),
+                        other => other.strip_prefix("#x").and_then(|h| u32::from_str_radix(h, 16).ok()).or_else(|| other.strip_prefix('#').and_then(|d| d.parse().ok())).and_then(char::from_u32).map(String::from).unwrap_or_default(),
+                    },
+                    _ => String::new(),
+                };
                 if in_content {
                     st.text.push_str(&text.replace('\u{2028}', "\n"));
                 } else if in_font

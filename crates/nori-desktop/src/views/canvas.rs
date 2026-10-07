@@ -782,7 +782,7 @@ impl CanvasView {
             }
             Drag::Frame { start, now } => {
                 let tool = self.store.read(cx).tool;
-                let size = self.store.read(cx).settings.tools.font_size;
+                let size = self.store.read(cx).settings.tools.font_size as f32;
                 let params = if tiny(start, now) {
                     json!({ "text": if tool == Tool::Frame { "Text frame" } else { "Text" }, "x": start.0, "y": start.1 - size * 0.2, "size": size })
                 } else {
