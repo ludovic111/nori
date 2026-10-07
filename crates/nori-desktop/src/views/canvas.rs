@@ -1246,6 +1246,9 @@ impl Render for CanvasView {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::down))
             .on_mouse_move(cx.listener(Self::moved))
+            // A release before the next frame (so before the window-wide tracker is there) ends the drag too.
+            .on_mouse_up(MouseButton::Left, cx.listener(Self::up))
+            .on_mouse_up(MouseButton::Middle, cx.listener(Self::up))
             .on_scroll_wheel(cx.listener(Self::scroll))
             .on_pinch(cx.listener(Self::pinch))
             .when(self.drag.is_some(), |d| d.child(crate::ui::drag::track(entity.clone(), |c, e, w, cx| c.moved(e, w, cx), |c, e, w, cx| c.up(e, w, cx))))
