@@ -70,7 +70,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
     let fg = s.colors.read().foreground;
     match cx.spec.name {
         "text.add" => s.edit(cx.label(), cx.source, None, |d| {
-            let mut t = TextLayer { text: a.str("text")?.to_string(), x: a.f64("x")? as f32, y: a.f64("y")? as f32, font: tools.font.clone(), size: tools.font_size as f32, color: fg, ..Default::default() };
+            let mut t = TextLayer { text: words(a.str("text")?), x: a.f64("x")? as f32, y: a.f64("y")? as f32, font: tools.font.clone(), size: tools.font_size as f32, color: fg, ..Default::default() };
             if let (Some(w), Some(h)) = (a.opt_f64("frameWidth"), a.opt_f64("frameHeight")) {
                 t.frame = Some([(w as f32).max(1.0), (h as f32).max(1.0)]);
             } else if let Some(w) = a.opt_f64("frameWidth") {
@@ -98,10 +98,11 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             let id = util::layer_id(d, &a)?;
             let t = text_mut(d, &id)?;
             if let Some(v) = a.opt_str("text") {
+                let v = words(v);
                 if v.len() != t.text.len() {
                     t.runs.retain(|r| r.end <= v.len());
                 }
-                t.text = v.to_string();
+                t.text = v;
             }
             set_style(t, &a)?;
             if let Some(v) = a.opt_f64("x") {
@@ -252,3 +253,9 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
 
 #[allow(dead_code)]
 fn _align(_: TextAlign) {}
+
+/// The words as given, with a typed `\n` (backslash, n: what shells and some agents send for a
+/// line break) made a real one.
+fn words(s: &str) -> String {
+    s.replace("\\n", "\n")
+}
