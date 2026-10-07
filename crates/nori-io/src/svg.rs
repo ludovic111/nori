@@ -420,7 +420,7 @@ pub fn write(doc: &Document, page: Option<&Page>) -> Result<String, String> {
         h = page.height
     );
     if !w.defs.is_empty() {
-        let _ = write!(out, "<defs>{}</defs>\n", w.defs);
+        let _ = writeln!(out, "<defs>{}</defs>", w.defs);
     }
     out.push_str(&w.body);
     out.push_str("\n</svg>\n");
@@ -428,6 +428,7 @@ pub fn write(doc: &Document, page: Option<&Page>) -> Result<String, String> {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -468,4 +469,15 @@ mod tests {
         let again = read(out.as_bytes(), "t").unwrap();
         assert_eq!(again.page().layers.len(), 1);
     }
+}
+
+/// Converts already transformed path segments into editable IDML control points.
+pub(crate) fn geometry_for_idml(segs: &[Seg]) -> Vec<SubPath> {
+    let mut paths: Vec<SubPath> = vec![];
+    for seg in segs { match *seg {
+        Seg::Move(p) => paths.push(SubPath { nodes: vec![VNode::corner(p[0],p[1])], closed:false }),
+        Seg::Line(p) => if let Some(sp)=paths.last_mut() {sp.nodes.push(VNode::corner(p[0],p[1]));},
+        Seg::Cubic(a,b,p) => if let Some(sp)=paths.last_mut() {if let Some(last)=sp.nodes.last_mut() {last.handle_out=Some(a);}sp.nodes.push(VNode {x:p[0],y:p[1],handle_in:Some(b),handle_out:None});},
+        Seg::Close => if let Some(sp)=paths.last_mut() {sp.closed=true;},
+    }} paths
 }

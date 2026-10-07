@@ -18,6 +18,8 @@ base64.workspace = true
 tiny-skia = "0.11"
 usvg = "0.46"
 krilla = "0.8"
+hayro-svg = "0.7"
+flate2.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

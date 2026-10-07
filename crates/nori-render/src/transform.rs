@@ -1,3 +1,4 @@
+#![allow(clippy::chunks_exact_to_as_chunks)] // Slice iterators preserve existing comparison and byte-decoding types.
 //! Resampling and geometry: image size, scaling and rotating layers, flips, quarter turns.
 //! Resampling works on premultiplied colour (no dark fringes at transparent edges), with a
 //! kernel widened when shrinking so nothing aliases.
@@ -74,7 +75,7 @@ impl Filter {
 
 /// Straight RGBA8 → premultiplied f32.
 pub fn premultiply(rgba: &[u8]) -> Vec<[f32; 4]> {
-    rgba.chunks_exact(4)
+    rgba.as_chunks::<4>().0.iter()
         .map(|p| {
             let a = p[3] as f32 / 255.0;
             [p[0] as f32 / 255.0 * a, p[1] as f32 / 255.0 * a, p[2] as f32 / 255.0 * a, a]
@@ -303,6 +304,7 @@ pub fn affine(r: &Raster, x: i32, y: i32, sx: f32, sy: f32, degrees: f32, cx: f3
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -376,7 +378,7 @@ pub fn scale_document(doc: &nori_core::Document, k: f32, f: Filter) -> nori_core
                 let grey: Vec<u8> = m.mask.to_vec().iter().flat_map(|v| [*v, *v, *v, 255]).collect();
                 let out = resample_rgba(&grey, m.mask.width(), m.mask.height(), w, h, f);
                 let fill = m.mask.fill();
-                m.mask = Mask::from_vec(w, h, fill, &out.chunks_exact(4).map(|p| p[0]).collect::<Vec<u8>>());
+                m.mask = Mask::from_vec(w, h, fill, &out.as_chunks::<4>().0.iter().map(|p| p[0]).collect::<Vec<u8>>());
             }
             match &mut l.content {
                 Content::Raster { x, y, pixels } => {

@@ -15,6 +15,7 @@ pub mod pdf;
 pub mod plan;
 pub mod psd;
 pub mod svg;
+pub mod xcf;
 
 use std::path::Path;
 
@@ -42,11 +43,13 @@ pub static FORMATS: &[Format] = &[
     Format { id: "tiff", name: "TIFF", extensions: &["tif", "tiff"], open: true, export: true, keeps: "pixels with transparency" },
     Format { id: "bmp", name: "BMP", extensions: &["bmp"], open: true, export: true, keeps: "pixels" },
     Format { id: "gif", name: "GIF", extensions: &["gif"], open: true, export: false, keeps: "pixels (first frame)" },
-    Format { id: "psd", name: "Photoshop document", extensions: &["psd"], open: true, export: false, keeps: "layers (pixels, positions, opacity, blend modes, groups, clipping); text and smart objects as their pixels" },
+    Format { id: "xcf", name: "GIMP XCF", extensions: &["xcf"], open: true, export: false, keeps: "8-bit RGB/grayscale layers, groups, masks and common blend modes (XCF versions 0–13)" },
+    Format { id: "psd", name: "Photoshop document", extensions: &["psd"], open: true, export: true, keeps: "layers (pixels, positions, opacity, blend modes, groups, clipping); text and smart objects as their pixels" },
     Format { id: "ora", name: "OpenRaster", extensions: &["ora"], open: true, export: true, keeps: "layers (pixels, positions, opacity, blend modes, groups)" },
-    Format { id: "idml", name: "InDesign Markup", extensions: &["idml"], open: true, export: false, keeps: "pages, text frames and their threads, character settings, shapes, fills and strokes, placed pictures found on disk" },
+    Format { id: "idml", name: "InDesign Markup", extensions: &["idml"], open: true, export: true, keeps: "pages, text frames and their threads, character settings, shapes, fills and strokes, placed pictures found on disk" },
     Format { id: "svg", name: "SVG", extensions: &["svg", "svgz"], open: true, export: true, keeps: "vectors (paths, fills, strokes, gradients, groups); text as outlines" },
-    Format { id: "pdf", name: "PDF", extensions: &["pdf"], open: false, export: true, keeps: "every page: vectors, text as outlines, pixels as images" },
+    Format { id: "ai", name: "Illustrator (PDF compatible)", extensions: &["ai"], open: true, export: false, keeps: "PDF-compatible pages as vector paths and pictures; text as outlines; no Illustrator private data" },
+    Format { id: "pdf", name: "PDF", extensions: &["pdf"], open: true, export: true, keeps: "every page: vectors, selectable text with embedded fonts, pixels as images" },
 ];
 
 pub fn format_of(path: &Path) -> Option<&'static Format> {
@@ -77,12 +80,12 @@ pub struct App {
 
 pub static APPS: &[App] = &[
     App { id: "photoshop", name: "Photoshop", maker: "Adobe", kind: "photo", formats: &["psd"], how: "Open the .psd: layers, groups, blend modes and opacity come with it." },
-    App { id: "gimp", name: "GIMP", maker: "The GIMP team", kind: "photo", formats: &["ora", "psd"], how: "In GIMP, File › Export As… OpenRaster (.ora) or Photoshop (.psd), then open it here with its layers." },
+    App { id: "gimp", name: "GIMP", maker: "The GIMP team", kind: "photo", formats: &["xcf", "ora", "psd"], how: "Open an 8-bit RGB/grayscale .xcf with layers and masks, or export OpenRaster for newer GIMP effects and high-bit-depth files." },
     App { id: "affinityphoto", name: "Affinity Photo", maker: "Serif (Canva)", kind: "photo", formats: &["psd"], how: "In Affinity Photo, File › Export › PSD, then open it here with its layers." },
     App { id: "pixelmator", name: "Pixelmator Pro", maker: "Pixelmator Team (Apple)", kind: "photo", formats: &["psd"], how: "In Pixelmator Pro, File › Export › Photoshop, then open it here with its layers." },
     App { id: "krita", name: "Krita", maker: "KDE", kind: "photo", formats: &["ora", "psd"], how: "In Krita, File › Export… OpenRaster (.ora), then open it here with its layers." },
     App { id: "photopea", name: "Photopea", maker: "Ivan Kutskir", kind: "photo", formats: &["psd"], how: "In Photopea, File › Save as PSD, then open it here with its layers." },
-    App { id: "illustrator", name: "Illustrator", maker: "Adobe", kind: "vector", formats: &["svg"], how: "In Illustrator, File › Export › Export As… SVG, then open it here: paths, fills, strokes and gradients stay editable." },
+    App { id: "illustrator", name: "Illustrator", maker: "Adobe", kind: "vector", formats: &["ai", "svg", "pdf"], how: "Open a PDF-compatible .ai or PDF, or export SVG: paths stay editable; PDF text becomes outlines." },
     App { id: "inkscape", name: "Inkscape", maker: "Inkscape Project", kind: "vector", formats: &["svg"], how: "Open Inkscape's .svg here: paths, groups, fills, strokes and gradients stay editable." },
     App { id: "figma", name: "Figma", maker: "Figma", kind: "vector", formats: &["svg"], how: "In Figma, select a frame, Export › SVG, then open it here as vector layers." },
     App { id: "affinitydesigner", name: "Affinity Designer", maker: "Serif (Canva)", kind: "vector", formats: &["svg", "psd"], how: "In Affinity Designer, File › Export › SVG, then open it here as vector layers." },
@@ -167,11 +170,12 @@ pub fn open(path: &Path) -> Result<Document, String> {
     let fmt = format_of(path).map(|f| f.id).unwrap_or("");
     let res = match fmt {
         "nori" => nori_core::file::from_bytes(&bytes),
+        "xcf" => xcf::read(&bytes, &name),
         "psd" => psd::read(&bytes, &name),
         "ora" => ora::read(&bytes, &name),
         "svg" => svg::read(&bytes, &name),
         "idml" => idml::read(&bytes, &name),
-        "pdf" => Err("nori writes PDF but doesn't open it yet.".to_string()),
+        "pdf" | "ai" => pdf::read(&bytes, &name),
         _ => {
             // Sniff: a nori file (zip with document.json), else a picture.
             if bytes.starts_with(b"PK") {
@@ -194,7 +198,7 @@ pub fn place(doc: &mut Document, path: &Path, at: Option<(i32, i32)>) -> Result<
     let name = name_of(path);
     match format_of(path).map(|f| f.id) {
         Some("svg") => svg::place(doc, &bytes, &name),
-        Some("psd" | "ora" | "nori") => {
+        Some("psd" | "ora" | "nori" | "pdf" | "ai" | "xcf") => {
             let other = open(path)?;
             let mut layers = other.pages.into_iter().next().map(|p| p.layers).unwrap_or_default();
             fn renumber(doc: &mut Document, list: &mut [Layer]) {
@@ -297,6 +301,11 @@ pub fn export(doc: &Document, path: &Path, opts: &ExportOptions) -> Result<Expor
             let p = &doc.pages[page];
             (pdf::write(doc, list.as_deref())?, p.width, p.height, n)
         }
+        "idml" => (idml::write(doc)?, doc.width(), doc.height(), doc.pages.len()),
+        "psd" => {
+            let p = &doc.pages[page];
+            (psd::write(doc, page)?, p.width, p.height, 1)
+        }
         "ora" => {
             let mut d = doc.clone();
             d.active_page = d.pages[page].id.clone();
@@ -310,7 +319,7 @@ pub fn export(doc: &Document, path: &Path, opts: &ExportOptions) -> Result<Expor
             use image::ImageEncoder;
             let flat = |rgba: &mut Vec<u8>| -> Vec<u8> {
                 let m = opts.matte.to_u8();
-                rgba.chunks_exact(4)
+                rgba.as_chunks::<4>().0.iter()
                     .flat_map(|p| {
                         let a = p[3] as u32;
                         [0, 1, 2].map(|c| ((p[c] as u32 * a + m[c] as u32 * (255 - a) + 127) / 255) as u8)
@@ -370,7 +379,7 @@ mod tests {
         let pdf = export(&d, &dir.path().join("out.pdf"), &ExportOptions::default()).unwrap();
         assert_eq!(pdf.format, "pdf");
         assert!(export(&d, &dir.path().join("x.gif"), &ExportOptions::default()).is_err());
-        assert!(open(&dir.path().join("out.pdf")).is_err());
+        assert_eq!(open(&dir.path().join("out.pdf")).unwrap().pages.len(), 1);
     }
 
     #[test]

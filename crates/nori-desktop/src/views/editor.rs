@@ -97,7 +97,7 @@ impl Editor {
                             .hover(|s| s.bg(t.hover).text_color(t.text))
                             .tooltip(|_, cx| crate::ui::tooltip(tip("Close and go home", &act::CloseDocument), cx))
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("doc.close", json!({}), cx)))
+                            .on_click(|_, window, cx| crate::app::close_document(window,cx))
                             .child(icon("chevron-left"))
                             .child(crate::views::home::mark(18., cx)),
                     )
@@ -219,6 +219,18 @@ impl Render for Editor {
             .flex()
             .flex_col()
             .child(self.top_bar(window, cx))
+            .child({
+                let tabs = self.store.read(cx).session.tabs();
+                div().id("document-tabs").flex().flex_none().h(px(34.)).overflow_x_scroll().gap(px(2.)).bg(t.bg).border_b_1().border_color(t.line)
+                    .children(tabs.into_iter().map(|tab| {
+                        let id = tab["id"].as_u64().unwrap_or(0);
+                        let active = tab["active"].as_bool().unwrap_or(false);
+                        let name = format!("{}{}", tab["name"].as_str().unwrap_or("Untitled"), if tab["dirty"] == true { " •" } else { "" });
+                        div().id(("doc-tab", id)).flex().items_center().px(px(12.)).min_w(px(80.)).max_w(px(240.)).text_size(px(sz::SM)).text_color(if active { t.text } else { t.text_2 })
+                            .when(active, |d| d.bg(t.hover)).cursor_pointer().hover(|d| d.bg(t.hover)).child(name)
+                            .on_click(move |_, _, cx| cx.store().update(cx, |s, cx| s.run("doc.select", json!({ "id": id }), cx)))
+                    }))
+            })
             .child(
                 div()
                     .flex_1()

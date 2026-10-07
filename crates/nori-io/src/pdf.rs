@@ -1,6 +1,6 @@
 //! PDF export (through `krilla`): every page of the document, at its size in points (pixels ×
 //! 72 / dpi), vector layers as PDF paths with their fills, strokes and gradients, text as
-//! outlines (sharp at any zoom), pixels as images, opacity and blend modes as PDF's own. What
+//! searchable glyphs with embedded fonts, pixels as images, opacity and blend modes as PDF's own. What
 //! PDF can't say (adjustment layers, masks, clipping) is drawn into a picture with what is under
 //! it (`plan::split`).
 
@@ -44,21 +44,6 @@ fn path_of(segs: &[Seg]) -> Option<krilla::geom::Path> {
             Seg::Line(p) => pb.line_to(p[0], p[1]),
             Seg::Cubic(a, b, p) => pb.cubic_to(a[0], a[1], b[0], b[1], p[0], p[1]),
             Seg::Close => pb.close(),
-        }
-    }
-    pb.finish()
-}
-
-fn skia_path(p: &tiny_skia::Path) -> Option<krilla::geom::Path> {
-    use tiny_skia::PathSegment as S;
-    let mut pb = PathBuilder::new();
-    for s in p.segments() {
-        match s {
-            S::MoveTo(p) => pb.move_to(p.x, p.y),
-            S::LineTo(p) => pb.line_to(p.x, p.y),
-            S::QuadTo(c, p) => pb.quad_to(c.x, c.y, p.x, p.y),
-            S::CubicTo(a, b, p) => pb.cubic_to(a.x, a.y, b.x, b.y, p.x, p.y),
-            S::Close => pb.close(),
         }
     }
     pb.finish()
@@ -149,12 +134,19 @@ fn layers(s: &mut krilla::surface::Surface, doc: &Document, page: &Page, list: &
                 }
             }
             Content::Text { .. } => {
-                for (c, p) in nori_render::text::outlines_on(doc, &l.id, Some(doc.page_number(&page.id))) {
-                    if let Some(path) = skia_path(&p) {
-                        s.set_fill(Some(Fill { paint: rgb_of(&c).into(), opacity: n(c.a), rule: FillRule::NonZero }));
-                        s.set_stroke(None);
-                        s.draw_path(&path);
-                    }
+                use krilla::text::{Font, GlyphId, KrillaGlyph};
+                use krilla::geom::Point;
+                let on = doc.pages.iter().position(|p| p.id == page.id);
+                let glyphs = nori_render::text::pdf_glyphs_on(doc, &l.id, on);
+                let mut fonts = std::collections::HashMap::new();
+                for g in &glyphs {
+                    let key = (std::sync::Arc::as_ptr(&g.font) as usize, g.font_index);
+                    let font = fonts.entry(key).or_insert_with(|| Font::new(g.font.as_ref().clone().into(), g.font_index));
+                    let Some(font) = font else { continue };
+                    let glyph = KrillaGlyph { glyph_id: GlyphId::new(g.id as u32), text_range: 0..g.text.len(), x_advance: g.advance / g.size, x_offset: 0.0, y_offset: 0.0, y_advance: 0.0, location: None };
+                    s.set_fill(Some(Fill { paint: rgb_of(&g.color).into(), opacity: n(g.color.a), rule: FillRule::NonZero }));
+                    s.set_stroke(None);
+                    s.draw_glyphs(Point::from_xy(g.x, g.y), &[glyph], font.clone(), &g.text, g.size, false);
                 }
             }
             Content::Fill { color } => {
@@ -207,6 +199,7 @@ pub fn write(doc: &Document, pages: Option<&[usize]>) -> Result<Vec<u8>, String>
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
     use nori_core::vector::{Geometry, Shape};
@@ -224,5 +217,39 @@ mod tests {
         let bytes = write(&d, None).unwrap();
         assert!(bytes.starts_with(b"%PDF-"));
         assert!(bytes.len() > 1000);
+        assert!(String::from_utf8_lossy(&bytes).contains("/ToUnicode"), "PDF text must have Unicode mappings");
+        let back = read(&bytes, "PDF roundtrip").unwrap();
+        assert_eq!(back.pages.len(), 2);
+        assert!(back.pages[0].layers.len() > 1);
     }
+}
+
+/// Opens PDF pages, including Illustrator files saved with PDF compatibility. Geometry stays
+/// editable; font glyphs become paths. Illustrator's private editing data is not interpreted.
+pub fn read(bytes: &[u8], name: &str) -> Result<Document, String> {
+    use hayro_svg::{RenderCache, SvgRenderSettings, hayro_interpret::InterpreterSettings, hayro_syntax::Pdf};
+    if !bytes.starts_with(b"%PDF-") {
+        return Err("This Illustrator file has no PDF compatibility data. Save it with Create PDF Compatible File enabled, or export SVG.".into());
+    }
+    let pdf = Pdf::new(bytes.to_vec()).map_err(|e| format!("Couldn't read the PDF data: {e:?}"))?;
+    if pdf.pages().is_empty() || pdf.pages().len() > 500 { return Err("PDF import supports 1–500 pages.".into()); }
+    let cache = RenderCache::new();
+    let mut doc = Document::empty(name, 1, 1);
+    doc.pages.clear(); doc.dpi = 72.0;
+    for (i, page) in pdf.pages().iter().enumerate() {
+        let (w, h) = page.render_dimensions();
+        if !w.is_finite() || !h.is_finite() || w < 1.0 || h < 1.0 || w > nori_core::MAX_SIDE as f32 || h > nori_core::MAX_SIDE as f32 { return Err("A PDF page exceeds nori's size limit.".into()); }
+        let svg = hayro_svg::convert(page, &cache, &InterpreterSettings::default(), &SvgRenderSettings::default());
+        let converted = crate::svg::read(svg.as_bytes(), name)?;
+        let mut p = converted.pages.into_iter().next().ok_or("The PDF page has no content")?;
+        p.id = doc.new_page_id(); p.name = format!("Page {}", i + 1);
+        fn ids(doc: &mut Document, layers: &mut [Layer]) {
+            for l in layers { l.id = doc.new_id(); if let Content::Group { children, .. } = &mut l.content { ids(doc, children); } }
+        }
+        ids(&mut doc, &mut p.layers);
+        doc.pages.push(p);
+    }
+    doc.active_page = doc.pages[0].id.clone();
+    doc.active = doc.pages[0].layers.first().map(|l| l.id.clone());
+    Ok(doc)
 }

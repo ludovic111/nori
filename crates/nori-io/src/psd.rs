@@ -69,7 +69,7 @@ pub fn read(bytes: &[u8], name: &str) -> Result<Document, String> {
     for (i, pl) in layers.iter().enumerate() {
         let id = doc.new_id();
         let (x0, y0) = (pl.layer_left().clamp(0, w as i32), pl.layer_top().clamp(0, h as i32));
-        let (x1, y1) = (pl.layer_right().clamp(0, w as i32), pl.layer_bottom().clamp(0, h as i32));
+        let (x1, y1) = (pl.layer_right().saturating_add(1).clamp(0, w as i32), pl.layer_bottom().saturating_add(1).clamp(0, h as i32));
         let (lw, lh) = ((x1 - x0).max(1) as u32, (y1 - y0).max(1) as u32);
         // The crate gives the layer drawn over the whole canvas; keep only its box.
         let full = pl.rgba();
@@ -140,4 +140,94 @@ pub fn read(bytes: &[u8], name: &str) -> Result<Document, String> {
     doc.pages[0].layers = top.into_iter().map(|n| n.layer).collect();
     doc.active = doc.pages[0].layers.first().map(|l| l.id.clone());
     Ok(doc)
+}
+
+/// Writes an RGB/8 PSD with editable pixel layers and a composite preview. Text, vectors,
+/// masks and groups are rendered per layer; compositing dependencies use `plan::split`.
+pub fn write(doc: &Document, page: usize) -> Result<Vec<u8>, String> {
+    let page = doc.pages.get(page).ok_or("No such page")?;
+    let (w, h) = (page.width, page.height);
+    if w > 30_000 || h > 30_000 || u64::from(w) * u64::from(h) > 64_000_000 { return Err("PSD export supports at most 64 million pixels, 30000 per side.".into()); }
+    fn u32b(out: &mut Vec<u8>, v: u32) { out.extend(v.to_be_bytes()); }
+    fn code(b: BlendMode) -> &'static [u8; 4] { match b {
+        BlendMode::Multiply => b"mul ", BlendMode::Screen => b"scrn", BlendMode::Overlay => b"over", BlendMode::Darken => b"dark", BlendMode::Lighten => b"lite",
+        BlendMode::ColorBurn => b"idiv", BlendMode::LinearBurn => b"lbrn", BlendMode::ColorDodge => b"div ", BlendMode::LinearDodge => b"lddg",
+        BlendMode::SoftLight => b"sLit", BlendMode::HardLight => b"hLit", BlendMode::VividLight => b"vLit", BlendMode::LinearLight => b"lLit", BlendMode::PinLight => b"pLit",
+        BlendMode::Difference => b"diff", BlendMode::Exclusion => b"smud", BlendMode::Subtract => b"fsub", BlendMode::Divide => b"fdiv",
+        BlendMode::Hue => b"hue ", BlendMode::Saturation => b"sat ", BlendMode::Color => b"colr", BlendMode::Luminosity => b"lum ", _ => b"norm"
+    } }
+    let (flat, above) = crate::plan::split(doc, page);
+    let mut layers = above;
+    if let Some((pixels, x, y)) = flat { layers.push(Layer::new("composite", "Composited layers", Content::Raster { x, y, pixels })); }
+    if layers.is_empty() { layers.push(Layer::new("empty", "Empty", Content::Raster { x: 0, y: 0, pixels: Raster::transparent(1, 1) })); }
+    if layers.len() > 4096 { return Err("Too many layers for PSD export.".into()); }
+    let mut records = Vec::new();
+    let mut channels = Vec::new();
+    let mut count = 0i16;
+    // PSD records are top to bottom; the decoder exposes them in reverse order.
+    for l in &layers {
+        let (x, y, lw, lh, rgba) = if let Content::Raster { x, y, pixels } = &l.content {
+            if l.mask.is_none() { (*x, *y, pixels.width(), pixels.height(), pixels.to_vec()) }
+            else { layer_pixels(doc, page, l) }
+        } else { layer_pixels(doc, page, l) };
+        let pixels = u64::from(lw) * u64::from(lh);
+        if pixels > 64_000_000 || channels.len() as u64 + pixels * 4 > 512_000_000 { return Err("PSD layers exceed the 512 MB export limit.".into()); }
+        records.extend(y.to_be_bytes()); records.extend(x.to_be_bytes());
+        records.extend((y + lh as i32).to_be_bytes()); records.extend((x + lw as i32).to_be_bytes());
+        records.extend(4u16.to_be_bytes());
+        for (channel, component) in [(0i16, 0usize), (1, 1), (2, 2), (-1, 3)] {
+            records.extend(channel.to_be_bytes()); u32b(&mut records, (pixels + 2) as u32);
+            channels.extend(0u16.to_be_bytes());
+            channels.extend(rgba.as_chunks::<4>().0.iter().map(|p| p[component]));
+        }
+        records.extend(b"8BIM"); records.extend(code(l.blend));
+        records.extend([(l.opacity.clamp(0.0, 1.0) * 255.0).round() as u8, 0, if l.visible { 0 } else { 2 }, 0]);
+        let mut extra = vec![0u8; 8]; // No layer mask or blend-range blocks (masks are baked).
+        let name: Vec<u8> = l.name.chars().take(255).map(|c| if c.is_ascii() { c as u8 } else { b'?' }).collect();
+        extra.push(name.len() as u8); extra.extend(name);
+        while !extra.len().is_multiple_of(4) { extra.push(0); }
+        let unicode: Vec<_> = l.name.encode_utf16().collect();
+        extra.extend(b"8BIMluni"); u32b(&mut extra, 4 + unicode.len() as u32 * 2); u32b(&mut extra, unicode.len() as u32);
+        for c in unicode { extra.extend(c.to_be_bytes()); }
+        if !extra.len().is_multiple_of(2) { extra.push(0); }
+        u32b(&mut records, extra.len() as u32); records.extend(extra);
+        count += 1;
+    }
+    let mut info = Vec::new(); info.extend((-count).to_be_bytes()); info.extend(records); info.extend(channels);
+    if info.len() % 2 != 0 { info.push(0); }
+    let mut out = Vec::new(); out.extend(b"8BPS"); out.extend(1u16.to_be_bytes()); out.extend([0; 6]);
+    out.extend(4u16.to_be_bytes()); u32b(&mut out, h); u32b(&mut out, w); out.extend(8u16.to_be_bytes()); out.extend(3u16.to_be_bytes());
+    u32b(&mut out, 0); u32b(&mut out, 0);
+    u32b(&mut out, info.len() as u32 + 8); u32b(&mut out, info.len() as u32); out.extend(info); u32b(&mut out, 0);
+    out.extend(0u16.to_be_bytes());
+    let preview = nori_render::flatten_page(doc, page);
+    for c in 0..4 { out.extend(preview.as_chunks::<4>().0.iter().map(|p| p[c])); }
+    Ok(out)
+}
+
+pub(crate) fn layer_pixels(doc: &Document, page: &nori_core::Page, layer: &Layer) -> (i32, i32, u32, u32, Vec<u8>) {
+    let mut d = doc.clone(); let mut p = page.clone(); let mut l = layer.clone();
+    l.visible = true; l.opacity = 1.0; l.blend = BlendMode::Normal; l.clipped = false;
+    p.layers = vec![l]; p.master = None;
+    d.pages = vec![p]; d.active_page = d.pages[0].id.clone();
+    (0, 0, page.width, page.height, nori_render::flatten_page(&d, &d.pages[0]))
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+    #[test]
+    fn exported_psd_keeps_layer_order_opacity_and_pixels() {
+        let mut d = Document::new("Layered", 8, 8, Some(nori_core::Color::WHITE));
+        let id = d.new_id();
+        let mut l = Layer::new(id, "Red", Content::Raster { x: 2, y: 3, pixels: Raster::from_rgba(2, 2, &[255, 0, 0, 255].repeat(4)) });
+        l.opacity = 0.5; d.insert_above(l, None);
+        let bytes = write(&d, 0).unwrap();
+        let restored = read(&bytes, "Roundtrip").unwrap();
+        assert_eq!(restored.pages[0].layers.len(), 2);
+        assert_eq!(restored.pages[0].layers[0].name, "Red");
+        assert!((restored.pages[0].layers[0].opacity - 0.5).abs() < 0.005);
+        assert_eq!(restored.pages[0].layers[0].raster().unwrap().0, 2);
+        assert_eq!(restored.pages[0].layers[0].raster().unwrap().2.to_vec(), [255, 0, 0, 255].repeat(4));
+    }
 }

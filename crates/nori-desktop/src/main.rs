@@ -39,6 +39,9 @@ fn main() {
     };
 
     // The bridge for nori-cli and nori-mcp, and the lsuite discovery entry.
+    runtime.spawn(nori_control::update::run_in_background(session.clone()));
+    nori_control::update::finish_pending();
+
     let bridge = runtime.block_on(nori_control::bridge::Server::start(session.clone()));
     let running = match &bridge {
         Ok(server) => Some(nori_control::discovery::Running { pid: std::process::id(), control_file: Some(server.path().to_path_buf()), port: Some(server.port()), since: chrono::Utc::now() }),
@@ -89,6 +92,7 @@ fn main() {
             let _ = nori_control::discovery::write(&nori_control::discovery::entry(&s.data_dir, None));
             drop(bridge.lock().take());
             nori_control::diagnostics::clean_exit();
+            nori_control::update::apply_on_quit();
             async {}
         })
         .detach();

@@ -15,6 +15,8 @@ const BATCH_WAIT: Duration = Duration::from_secs(5);
 pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
     match cx.spec.name {
         "doc.overview" => overview(s),
+        "doc.list" => Ok(json!({ "documents": s.tabs() })),
+        "doc.select" => { s.select_doc(a.opt_i64("id").unwrap_or(0) as u64)?; overview(s) },
         "doc.get" => Ok(json!(s.document()?)),
         "doc.new" => new(s, &a),
         "doc.open" => {
@@ -30,12 +32,12 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
         }
         "doc.save" => {
             let path = a.opt_str("path").map(|_| util::path(&a, "path")).transpose()?;
-            let s2 = s.clone();
-            let saved = tokio::task::spawn_blocking(move || s2.save(path)).await.map_err(|e| e.to_string())??;
+            let s2 = s.clone();let (_,_,id)=s.snapshot()?;
+            let saved = tokio::task::spawn_blocking(move || s2.save_document(id,path)).await.map_err(|e| e.to_string())??;
             Ok(json!({ "saved": saved.display().to_string() }))
         }
         "doc.close" => {
-            s.close_doc();
+            s.close_doc(a.opt_bool("discard").unwrap_or(false))?;
             Ok(json!({ "closed": true }))
         }
         "doc.setInfo" => s.edit(cx.label(), cx.source, None, |d| {
@@ -268,7 +270,7 @@ fn new(s: &Arc<Session>, a: &Args) -> CmdResult {
 }
 
 async fn resize(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
-    let (doc, rev, _) = s.snapshot()?;
+    let (doc, rev, doc_id) = s.snapshot()?;
     let (w, h) = (doc.width() as f64, doc.height() as f64);
     let k = match (a.opt_f64("scale"), a.opt_f64("width"), a.opt_f64("height")) {
         (Some(k), _, _) => k,
@@ -282,7 +284,7 @@ async fn resize(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
     let filter = nori_render::transform::Filter::parse(a.opt_str("filter").unwrap_or("bicubic"))?;
     let scaled = tokio::task::spawn_blocking(move || nori_render::transform::scale_document(&doc, k, filter)).await.map_err(|e| e.to_string())?;
     let (nw, nh) = (scaled.width(), scaled.height());
-    s.edit_at(rev, cx.label(), cx.source, move |d| {
+    s.edit_at(doc_id,rev, cx.label(), cx.source, move |d| {
         *d = scaled;
         Ok(json!({ "width": nw, "height": nh, "scale": k }))
     })
@@ -300,6 +302,7 @@ fn rotate(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
         let page = d.page_mut();
         let (w, h) = (page.width as f32, page.height as f32);
         let mut rasterized = vec![];
+        #[allow(clippy::too_many_arguments)]
         fn walk(l: &mut Layer, doc: &Document, prep: &nori_render::Prepared, w: f32, h: f32, q: i32, flip: Option<&str>, rasterized: &mut Vec<String>) -> Result<(), String> {
             // Text can't turn: it becomes pixels first.
             if matches!(l.content, Content::Text { .. }) && (q != 0 || flip.is_some()) {
@@ -316,7 +319,7 @@ fn rotate(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
                     None => nori_render::transform::rotate90(&r, q),
                 };
                 let fill = m.mask.fill();
-                m.mask = nori_core::Mask::from_vec(r.width(), r.height(), fill, &r.to_vec().chunks_exact(4).map(|p| p[0]).collect::<Vec<u8>>());
+                m.mask = nori_core::Mask::from_vec(r.width(), r.height(), fill, &r.to_vec().as_chunks::<4>().0.iter().map(|p| p[0]).collect::<Vec<u8>>());
             }
             // Where a point of the page goes.
             let map = |px: f32, py: f32| -> (f32, f32) {
@@ -447,7 +450,7 @@ async fn batch(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
     for (i, c) in commands.iter().enumerate() {
         let name = c.get("command").and_then(Value::as_str).ok_or_else(|| format!("commands[{i}] needs \"command\""))?;
         let spec = registry::spec(name).ok_or_else(|| format!("commands[{i}]: unknown command `{name}`"))?;
-        if matches!(spec.name, "doc.batch" | "doc.new" | "doc.open" | "doc.close") {
+        if matches!(spec.name, "doc.batch" | "doc.new" | "doc.open" | "doc.close" | "doc.select") {
             return Err(format!("commands[{i}]: `{name}` can't be part of a batch"));
         }
         let params = c.get("params").cloned().unwrap_or(json!({}));

@@ -262,6 +262,15 @@ impl Render for OptionsBar {
                 row.push(self.hardness.clone().into_any_element());
                 row.push(self.opacity.clone().into_any_element());
                 row.push(self.flow.clone().into_any_element());
+                let b = if tool == Tool::Eraser { &tools.eraser } else { &tools.brush };
+                let which = if tool == Tool::Eraser { "eraser" } else { "brush" };
+                let size_pressure=b.pressure_size;let opacity_pressure=b.pressure_opacity;
+                row.push(Button::new("pen-pressure", "Pressure").small().icon_after("chevron-down").on_click(move |e,_,cx| {
+                    let entries=vec![
+                        MenuItem::new(if size_pressure { "✓ Size follows pressure" } else { "Size follows pressure" },move |_,cx|cx.store().update(cx,|s,cx|s.run("app.setSetting",json!({"key":format!("tools.{which}.pressureSize"),"value":!size_pressure}),cx))).entry(),
+                        MenuItem::new(if opacity_pressure { "✓ Flow follows pressure" } else { "Flow follows pressure" },move |_,cx|cx.store().update(cx,|s,cx|s.run("app.setSetting",json!({"key":format!("tools.{which}.pressureOpacity"),"value":!opacity_pressure}),cx))).entry(),
+                    ];cx.store().update(cx,|s,cx|s.open_menu(e.position(),entries,cx));
+                }).into_any_element());
                 let tip = if tool == Tool::Eraser { tools.eraser.tip.clone() } else { tools.brush.tip.clone() };
                 row.push(
                     Button::new("brush-tip", tip.unwrap_or_else(|| "Round".into()))

@@ -270,7 +270,7 @@ pub fn renumber(d: &mut nori_core::Document, list: &mut [nori_core::Layer]) {
 
 /// Transparent pixels over a checkerboard (for pictures agents look at).
 pub fn checker(rgba: &[u8], w: u32, _h: u32) -> Vec<u8> {
-    rgba.chunks_exact(4)
+    rgba.as_chunks::<4>().0.iter()
         .enumerate()
         .flat_map(|(i, p)| {
             let (x, y) = (i as u32 % w, i as u32 / w);

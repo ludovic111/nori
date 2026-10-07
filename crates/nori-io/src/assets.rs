@@ -34,7 +34,7 @@ pub fn read_gbr(bytes: &[u8], fallback_name: &str) -> Result<TipImage, String> {
     let data = bytes.get(header..header + px * depth as usize).ok_or("the brush's pixels are cut short")?;
     let data: Vec<u8> = match depth {
         1 => data.to_vec(),
-        4 => data.chunks_exact(4).map(|p| p[3]).collect(),
+        4 => data.as_chunks::<4>().0.iter().map(|p| p[3]).collect(),
         d => return Err(format!("a brush with {d} bytes a pixel isn't supported")),
     };
     Ok(TipImage { name, width: w, height: h, data })
@@ -81,7 +81,7 @@ pub fn read_ase(bytes: &[u8]) -> Result<Vec<Swatch>, String> {
         let name = || -> Result<(String, usize), String> {
             let chars = be16(body, 0)? as usize;
             let raw = body.get(2..2 + chars * 2).ok_or("a name is cut short")?;
-            let units: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).take_while(|u| *u != 0).collect();
+            let units: Vec<u16> = raw.as_chunks::<2>().0.iter().map(|c| u16::from_be_bytes([c[0], c[1]])).take_while(|u| *u != 0).collect();
             Ok((String::from_utf16_lossy(&units), 2 + chars * 2))
         };
         match kind {

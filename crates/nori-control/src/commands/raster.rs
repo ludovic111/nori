@@ -23,8 +23,9 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
                 opacity: a.opt_f64("opacity").map_or(base.opacity, |v| v as f32),
                 flow: a.opt_f64("flow").map_or(base.flow, |v| v as f32),
                 spacing: a.opt_f64("spacing").map_or(base.spacing, |v| v as f32),
+                pressure_size: a.bool_or("pressureSize", base.pressure_size),
+                pressure_opacity: a.bool_or("pressureOpacity", base.pressure_opacity),
                 tip: a.opt_str("tip").map(str::to_string).or(base.tip.clone()),
-                ..base
             }
             .clamped();
             let color = util::color(&a, "color", s.colors.read().foreground)?;
@@ -65,7 +66,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             let contiguous = a.bool_or("contiguous", tools.contiguous);
             let sample_all = a.bool_or("sampleAll", tools.sample_all);
             let opacity = a.opt_f64("opacity").unwrap_or(1.0) as f32;
-            let (doc, rev, _) = s.snapshot()?;
+            let (doc, rev, doc_id) = s.snapshot()?;
             let id = util::layer_id(&doc, &a)?;
             let at = match (a.opt_i64("x"), a.opt_i64("y")) {
                 (Some(x), Some(y)) => Some((x as i32, y as i32)),
@@ -99,7 +100,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             })
             .await
             .map_err(|e| e.to_string())??;
-            s.edit_at(rev, cx.label(), cx.source, |d| {
+            s.edit_at(doc_id,rev, cx.label(), cx.source, |d| {
                 let (ox, oy) = util::prepare_paint(d, &id)?;
                 let px = util::raster_of(d, &id)?;
                 // The region in the raster's own pixels.
@@ -141,7 +142,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
                 Some(m) => {
                     let mut data = px.read_rect(Rect::new(0, 0, r.w, r.h));
                     let mv = m.read_rect(r);
-                    for (i, p) in data.chunks_exact_mut(4).enumerate() {
+                    for (i, p) in data.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                         p[3] = ((p[3] as u32 * (255 - mv[i] as u32) + 127) / 255) as u8;
                     }
                     px.write_rect(Rect::new(0, 0, r.w, r.h), &data);

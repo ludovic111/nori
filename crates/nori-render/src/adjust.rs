@@ -194,7 +194,7 @@ impl Compiled {
             Compiled::HueSaturation { hue, saturation, lightness, colorize } => {
                 let [h, s, l] = rgb_to_hsl(c);
                 let (h, s) = if *colorize { ((hue / 360.0).rem_euclid(1.0), (0.25 + saturation * 0.75).clamp(0.0, 1.0)) } else { ((h + hue / 360.0).rem_euclid(1.0), (s * (1.0 + saturation)).clamp(0.0, 1.0)) };
-                let mut out = hsl_to_rgb(h, s, if *colorize { l } else { l });
+                let mut out = hsl_to_rgb(h, s, l);
                 if *lightness > 0.0 {
                     out = out.map(|v| v + (1.0 - v) * lightness);
                 } else if *lightness < 0.0 {

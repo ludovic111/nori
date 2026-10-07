@@ -16,7 +16,7 @@ The complete document as JSON (the document.json of the .nori format; pixels are
 
 ### `doc.new`
 
-Make a new document (replacing the open one): a picture, a poster, a booklet. Give a size, or a preset: screen (1920×1080), square (2048), a4, a5, letter, poster-a2, story (1080×1920), instagram (1080×1350), card (1050×600). Print presets are 300 dpi. _(changes things)_
+Make a new document tab: a picture, a poster, a booklet. Give a size, or a preset: screen (1920×1080), square (2048), a4, a5, letter, poster-a2, story (1080×1920), instagram (1080×1350), card (1050×600). Print presets are 300 dpi. _(changes things)_
 
 | Parameter | Type | | Description |
 | --- | --- | --- | --- |
@@ -32,7 +32,7 @@ Make a new document (replacing the open one): a picture, a poster, a booklet. Gi
 
 ### `doc.open`
 
-Open a file as the document, replacing the open one: .nori, PNG, JPEG, WebP, TIFF, BMP, GIF, Photoshop .psd (with its layers), OpenRaster .ora (Krita, GIMP) or SVG (as vector layers). _(changes things · permission: files)_
+Open a file in a new document tab: .nori, PNG, JPEG, WebP, TIFF, BMP, GIF, Photoshop .psd (with its layers), OpenRaster .ora (Krita, GIMP) or SVG (as vector layers). _(changes things · permission: files)_
 
 | Parameter | Type | | Description |
 | --- | --- | --- | --- |
@@ -46,9 +46,25 @@ Save the document as a .nori file (where it was saved before, or path). _(change
 | --- | --- | --- | --- |
 | `path` | string |  | A .nori file to save to (and save to from now on). |
 
+### `doc.list`
+
+List open document tabs, their ids, names and unsaved changes. _(read only)_
+
+### `doc.select`
+
+Switch to an open document tab, keeping its undo history. _(changes things)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `id` | integer | required | Document id from doc.list. |
+
 ### `doc.close`
 
-Close the document (unsaved changes are lost unless saved first). _(changes things)_
+Close the active tab. Unsaved changes are refused unless discard=true. _(changes things)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `discard` | boolean |  | Explicitly discard unsaved changes. |
 
 ### `doc.setInfo`
 
@@ -267,6 +283,42 @@ Add a Color Lookup adjustment layer from a .cube LUT file (a film look, a grade 
 | `amount` | number |  | 0–1 (default 1). |
 | `above` | string |  | Put it above this layer (id or name). Defaults to above the active layer. |
 
+### `layer.makeSmartObject`
+
+Embed a layer’s editable native source and keep a rendered preview. Resizing always samples the original. _(changes things)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `layerId` | string |  | Layer id (L12) or unique name. Defaults to the active layer. |
+
+### `layer.resizeSmartObject`
+
+Resize a smart object from its original source, without cumulative resampling. _(changes things)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `layerId` | string |  | Layer id (L12) or unique name. Defaults to the active layer. |
+| `width` | integer | required | Width in pixels. |
+| `height` | integer | required | Height in pixels. |
+
+### `layer.replaceSmartObject`
+
+Replace the embedded source with a supported file; keep displayed size and position. _(changes things · permission: files)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `layerId` | string |  | Layer id (L12) or unique name. Defaults to the active layer. |
+| `path` | string | required | Replacement file. |
+
+### `layer.extractSmartObject`
+
+Save the editable embedded source as a .nori file. Edit it, save, then replace the source. _(changes things · permission: files)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `layerId` | string |  | Layer id (L12) or unique name. Defaults to the active layer. |
+| `path` | string | required | New .nori file; existing files are refused. |
+
 ### `layer.place`
 
 Place a file on the active page as a layer: a picture as pixels (centred, or at x, y), an SVG as a group of vector layers, a .nori/.psd/.ora as a group of its layers. _(changes things · permission: files)_
@@ -465,6 +517,8 @@ Paint a brush (or eraser) stroke on a pixel layer through points [[x, y, pressur
 | `opacity` | number |  | 0–1: the most paint the stroke lays down. |
 | `flow` | number |  | 0–1: paint per dab. |
 | `spacing` | number |  | Distance between dabs as a share of the size. |
+| `pressureSize` | boolean |  | Pen pressure controls brush size. |
+| `pressureOpacity` | boolean |  | Pen pressure controls brush flow. |
 | `erase` | boolean |  | Erase instead of painting. |
 | `tip` | string |  | A brush tip by name (brushes.list); default round. |
 
@@ -1108,6 +1162,18 @@ Change a setting by its dotted key (appearance.mode, tools.brush.size…). The a
 ### `app.checkUpdates`
 
 Look for a newer nori on GitHub Releases. _(read only)_
+
+### `app.updateStatus`
+
+Read update availability, download progress and restart state. _(read only)_
+
+### `app.installUpdate`
+
+Download, verify and install the available signed update. _(changes things · permission: app control)_
+
+### `app.restart`
+
+Restart nori to use an installed update. _(changes things · permission: app control · needs the window)_
 
 ### `app.whatsNew`
 

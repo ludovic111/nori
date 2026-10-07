@@ -66,7 +66,8 @@ pub fn save(doc: &Document, path: &Path, preview: Option<&Preview>) -> Result<()
 /// The file's bytes.
 pub fn to_bytes(doc: &Document, preview: Option<&Preview>) -> Result<Vec<u8>, String> {
     // Every picture is encoded first, in parallel (PNG is the slow part).
-    let mut jobs: Vec<(String, Box<dyn Fn() -> Result<Vec<u8>, String> + Send + Sync + '_>)> = vec![];
+    type EncodeJob<'a> = (String, Box<dyn Fn() -> Result<Vec<u8>, String> + Send + Sync + 'a>);
+    let mut jobs: Vec<EncodeJob<'_>> = vec![];
     for l in doc.all() {
         if let Content::Raster { pixels, .. } = &l.content {
             jobs.push((format!("layers/{}.png", l.id), Box::new(move || encode_png_rgba(pixels.width(), pixels.height(), &pixels.to_vec()))));
@@ -191,15 +192,14 @@ pub fn from_reader<R: Read + Seek>(reader: R) -> Result<Document, String> {
         let cube = read_entry(&mut zip, &format!("luts/{id}.cube"))?;
         let (cw, ch) = doc.page_of(&id).map(|p| (p.width, p.height)).unwrap_or((0, 0));
         let layer = doc.layer_mut(&id).ok_or("layer vanished")?;
-        if let Content::Raster { pixels, .. } = &mut layer.content {
-            if let Some(png) = raster {
+        if let Content::Raster { pixels, .. } = &mut layer.content
+            && let Some(png) = raster {
                 let (w, h, data) = decode_rgba(&png, &format!("layers/{id}.png"))?;
                 if w != pixels.width() || h != pixels.height() {
                     return Err(format!("layers/{id}.png is {w}×{h}, document.json says {}×{}", pixels.width(), pixels.height()));
                 }
                 *pixels = Raster::from_rgba(w, h, &data);
             }
-        }
         if let (Some(m), Some(png)) = (&mut layer.mask, mask) {
             let (w, h, data) = decode_grey(&png, &format!("masks/{id}.png"))?;
             if w != cw || h != ch {

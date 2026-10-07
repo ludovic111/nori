@@ -15,6 +15,7 @@ pub mod page;
 pub mod plugin;
 pub mod raster;
 pub mod select;
+pub mod smart;
 pub mod text;
 pub mod ui;
 pub mod util;
@@ -50,7 +51,7 @@ pub static SPECS: &[Spec] = &[
     // ---- doc ------------------------------------------------------------------------------------
     query("doc.overview", "The open document in one bounded answer: pages (size, margins, columns, master), every layer on each page as a tree (kind, name, id, bounds, opacity, blend, visibility, text and shape summaries, adjustment settings), the active page and layer, the selection, styles, colours, undo history, whether it is saved, and problems (text that overflows its frames, hidden or empty layers). Read it first.", &[]),
     query("doc.get", "The complete document as JSON (the document.json of the .nori format; pixels are only sizes).", &[]),
-    edit("doc.new", "Make a new document (replacing the open one): a picture, a poster, a booklet. Give a size, or a preset: screen (1920×1080), square (2048), a4, a5, letter, poster-a2, story (1080×1920), instagram (1080×1350), card (1050×600). Print presets are 300 dpi.", &[
+    edit("doc.new", "Make a new document tab: a picture, a poster, a booklet. Give a size, or a preset: screen (1920×1080), square (2048), a4, a5, letter, poster-a2, story (1080×1920), instagram (1080×1350), card (1050×600). Print presets are 300 dpi.", &[
         opt("name", String, "Name (default \"Untitled\")."),
         opt("width", Integer, "Width in pixels (default 1920)."),
         opt("height", Integer, "Height in pixels (default 1080)."),
@@ -61,9 +62,11 @@ pub static SPECS: &[Spec] = &[
         opt("margins", Number, "Page margins in pixels, every side (default none)."),
         opt("columns", Integer, "Columns inside the margins (default 1)."),
     ]),
-    edit("doc.open", "Open a file as the document, replacing the open one: .nori, PNG, JPEG, WebP, TIFF, BMP, GIF, Photoshop .psd (with its layers), OpenRaster .ora (Krita, GIMP) or SVG (as vector layers).", &[req("path", String, "The file.")]).perm(Perm::Files),
+    edit("doc.open", "Open a file in a new document tab: .nori, PNG, JPEG, WebP, TIFF, BMP, GIF, Photoshop .psd (with its layers), OpenRaster .ora (Krita, GIMP) or SVG (as vector layers).", &[req("path", String, "The file.")]).perm(Perm::Files),
     edit("doc.save", "Save the document as a .nori file (where it was saved before, or path).", &[opt("path", String, "A .nori file to save to (and save to from now on).")]).perm(Perm::Files),
-    edit("doc.close", "Close the document (unsaved changes are lost unless saved first).", &[]),
+    query("doc.list", "List open document tabs, their ids, names and unsaved changes.", &[]),
+    edit("doc.select", "Switch to an open document tab, keeping its undo history.", &[req("id", Integer, "Document id from doc.list.")]),
+    edit("doc.close", "Close the active tab. Unsaved changes are refused unless discard=true.", &[opt("discard", Boolean, "Explicitly discard unsaved changes.")]),
     edit("doc.setInfo", "Change the document's name, resolution (dpi: print sizes and PDF points come from it; no pixel changes) or the units the window shows.", &[
         opt("name", String, "Name."),
         opt("dpi", Number, "Pixels per inch."),
@@ -152,6 +155,10 @@ pub static SPECS: &[Spec] = &[
         ABOVE,
     ]),
     edit("layer.addLut", "Add a Color Lookup adjustment layer from a .cube LUT file (a film look, a grade from Resolve or Premiere).", &[req("path", String, "The .cube file."), opt("amount", Number, "0–1 (default 1)."), ABOVE]).perm(Perm::Files),
+    edit("layer.makeSmartObject", "Embed a layer’s editable native source and keep a rendered preview. Resizing always samples the original.", &[LAYER]),
+    edit("layer.resizeSmartObject", "Resize a smart object from its original source, without cumulative resampling.", &[LAYER, req("width", Integer, "Width in pixels."), req("height", Integer, "Height in pixels.")]),
+    edit("layer.replaceSmartObject", "Replace the embedded source with a supported file; keep displayed size and position.", &[LAYER, req("path", String, "Replacement file.")]).perm(Perm::Files),
+    edit("layer.extractSmartObject", "Save the editable embedded source as a .nori file. Edit it, save, then replace the source.", &[LAYER, req("path", String, "New .nori file; existing files are refused.")]).perm(Perm::Files),
     edit("layer.place", "Place a file on the active page as a layer: a picture as pixels (centred, or at x, y), an SVG as a group of vector layers, a .nori/.psd/.ora as a group of its layers.", &[
         req("path", String, "The file."),
         opt("x", Integer, "Left edge (pictures)."),
@@ -226,6 +233,8 @@ pub static SPECS: &[Spec] = &[
         opt("opacity", Number, "0–1: the most paint the stroke lays down."),
         opt("flow", Number, "0–1: paint per dab."),
         opt("spacing", Number, "Distance between dabs as a share of the size."),
+        opt("pressureSize", Boolean, "Pen pressure controls brush size."),
+        opt("pressureOpacity", Boolean, "Pen pressure controls brush flow."),
         opt("erase", Boolean, "Erase instead of painting."),
         opt("tip", String, "A brush tip by name (brushes.list); default round."),
     ]),
@@ -420,6 +429,9 @@ pub static SPECS: &[Spec] = &[
     query("app.settings", "Every setting and its value.", &[]),
     edit("app.setSetting", "Change a setting by its dotted key (appearance.mode, tools.brush.size…). The agent's provider and permissions stay with the person.", &[req("key", String, "Dotted key from app.settings."), req("value", Any, "New value, same type.")]).perm(Perm::Settings),
     query("app.checkUpdates", "Look for a newer nori on GitHub Releases.", &[]),
+    query("app.updateStatus", "Read update availability, download progress and restart state.", &[]),
+    edit("app.installUpdate", "Download, verify and install the available signed update.", &[]).perm(Perm::AppControl),
+    edit("app.restart", "Restart nori to use an installed update.", &[]).perm(Perm::AppControl).window(),
     query("app.whatsNew", "Release notes: this version's, or every release's.", &[opt("all", Boolean, "Every release.")]),
     query("app.onboarding", "The first-run setup: whether it's done, the editors people come from (with their real logos in the window) and what nori opens from each, and the agent choices.", &[]),
     edit("app.finishOnboarding", "Finish (or skip) the first-run setup, remembering the editors the person came from.", &[opt("comingFrom", Array, "App ids from app.onboarding.").of(String)]),

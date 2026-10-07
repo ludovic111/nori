@@ -98,6 +98,7 @@ pub fn describe(d: &Document, l: &Layer, depth: usize) -> Value {
         "id": l.id,
         "name": l.name,
         "kind": l.content.kind(),
+        "smartObject": l.smart_source.is_some(),
         "visible": l.visible,
         "opacity": (l.opacity * 1000.0).round() / 1000.0,
         "blend": l.blend.id(),
@@ -224,6 +225,7 @@ pub fn prepare_paint(d: &mut Document, id: &str) -> CmdResult<(i32, i32)> {
     let (pw, ph) = d.page_of(id).map(|p| (p.width, p.height)).ok_or("That layer has no page")?;
     let l = d.layer_mut(id).ok_or("No such layer")?;
     unlocked(l)?;
+    if l.smart_source.is_some() { return Err("Edit the smart object’s source or rasterize it before painting.".into()); }
     let name = l.name.clone();
     let kind = l.content.kind();
     let Some((x, y, px)) = l.raster_mut() else {

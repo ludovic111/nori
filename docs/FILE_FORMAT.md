@@ -78,3 +78,5 @@ Every layer has `id`, `name`, `visible`, `locked`, `opacity` (0–1), `blend` (`
 
 Readers ignore fields they don't know. New fields get defaults, so files from older nori open in
 newer ones; `format` changes only when an older nori would misread a newer file.
+
+Smart objects keep a `smart_source` base64 native document alongside their cached raster content. The source is shared between undo snapshots and survives save/open; the cache can be replaced at any size without overwriting the original. External formats export the rendered cache where an embedded native source cannot be represented.

@@ -63,7 +63,7 @@ pub fn fill_mask(raster: &mut Raster, mask: &Mask, color: Color, opacity: f32) -
     }
     let mut px = raster.read_rect(b);
     let m = mask.read_rect(b);
-    for (i, p) in px.chunks_exact_mut(4).enumerate() {
+    for (i, p) in px.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let k = m[i] as f32 / 255.0 * opacity.clamp(0.0, 1.0) * color.a;
         if k <= 0.0 {
             continue;
@@ -118,7 +118,7 @@ pub fn gradient(raster: &mut Raster, origin: (i32, i32), kind: GradientKind, a: 
     let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
     let len2 = (dx * dx + dy * dy).max(1e-6);
     let len = len2.sqrt();
-    for (i, p) in px.chunks_exact_mut(4).enumerate() {
+    for (i, p) in px.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let k = opacity * sel.as_ref().map_or(1.0, |s| s[i] as f32 / 255.0);
         if k <= 0.0 {
             continue;

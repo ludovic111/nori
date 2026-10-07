@@ -178,9 +178,9 @@ pub fn run(id: &str, v: &[f64], px: &mut [[f32; 4]], w: usize, h: usize, origin:
                         if gaussian { (u(0) + u(1) + u(2) + u(3) - 2.0) * 0.866 } else { u(0) * 2.0 - 1.0 }
                     };
                     let shared = n(0);
-                    for c in 0..3 {
+                    for (c,value) in p.iter_mut().enumerate().take(3) {
                         let d = if mono { shared } else { n(c as u32 + 1) } * amount;
-                        p[c] = (p[c] / a + d).clamp(0.0, 1.0) * a;
+                        *value = (*value / a + d).clamp(0.0, 1.0) * a;
                     }
                 }
             });
@@ -256,8 +256,8 @@ fn box_rows(src: &[[f32; 4]], dst: &mut [[f32; 4]], w: usize, r: usize) {
                 acc[c] += p[c];
             }
         }
-        for x in 0..w {
-            out[x] = acc.map(|v| v / n);
+        for (x,value) in out.iter_mut().enumerate().take(w) {
+            *value = acc.map(|v| v / n);
             let add = at(x as isize + r as isize + 1);
             let sub = at(x as isize - r as isize);
             for c in 0..4 {

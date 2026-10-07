@@ -1,3 +1,4 @@
+#![allow(clippy::chunks_exact_to_as_chunks)] // Slice iterators preserve existing comparison and byte-decoding types.
 //! Compositing: the layers, bottom to top, onto a premultiplied f32 buffer, one canvas tile at
 //! a time (tiles in parallel). The window, the export and every command that looks at the
 //! picture use this.
@@ -181,7 +182,7 @@ fn draw_layer(l: &Layer, prep: &Prepared, r: Rect, buf: &mut [Px], clip: Option<
             Some(cov)
         }
         Content::Adjustment { .. } => {
-            let Some(c) = prep.adjust.get(&l.id) else { return None };
+            let c = prep.adjust.get(&l.id)?;
             for (i, d) in buf.iter_mut().enumerate() {
                 let a = d[3];
                 if a <= 0.0 {

@@ -27,7 +27,9 @@ pub fn init(session: Arc<Session>, cx: &mut App) {
     cx.set_global(GlobalStore(store));
     crate::actions::bind(cx);
     cx.set_menus(crate::actions::menus());
-    cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.on_action(|_: &Quit, cx| {
+        if let Some(w)=cx.windows().first().copied() { let _=w.update(cx,|_,window,cx|quit_dialog(window,cx)); }
+    });
     cx.on_window_closed(|cx, _| {
         if cx.windows().is_empty() {
             cx.quit();
@@ -185,6 +187,9 @@ impl Workspace {
 
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let store = cx.store();
+        window.on_window_should_close(cx,|window,cx|{
+            if cx.store().read(cx).session.tabs().iter().any(|t|t["dirty"]==true) {quit_dialog(window,cx);false}else{true}
+        });
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         let home = cx.new(|cx| views::home::Home::new(window, cx));
@@ -267,7 +272,15 @@ impl Workspace {
                 Ok(json!({ "action": name }))
             }
             "ui.screenshot" => Err("ui.screenshot works on macOS only for now.".into()),
+            "app.restart" => {
+                let session = &store.read(cx).session;
+                session.save_all()?;
+                nori_control::update::restart().map_err(|e| e.to_string())?;
+                cx.quit();
+                Ok(json!({ "restarting": true }))
+            }
             "app.quit" => {
+                store.read(cx).session.save_all()?;
                 cx.quit();
                 Ok(json!({ "quitting": true }))
             }
@@ -362,7 +375,7 @@ impl Render for Workspace {
                     ws.store.update(cx, |s, cx| s.open_dialog(Dialog::Export, cx))
                 }
             }))
-            .on_action(cx.listener(|ws, _: &CloseDocument, _, cx| ws.run("doc.close", json!({}), cx)))
+            .on_action(cx.listener(|_, _: &CloseDocument, window, cx| close_document(window,cx)))
             .on_action(cx.listener(|ws, _: &OpenSettings, _, cx| ws.store.update(cx, |s, cx| s.open_dialog(Dialog::Settings { section: None }, cx))))
             .on_action(cx.listener(|ws, _: &About, _, cx| ws.store.update(cx, |s, cx| s.open_dialog(Dialog::Settings { section: Some("about".into()) }, cx))))
             .on_action(cx.listener(|ws, _: &OpenPlugins, _, cx| ws.store.update(cx, |s, cx| s.open_dialog(Dialog::Plugins { tab: None }, cx))))
@@ -526,4 +539,47 @@ fn page_step(ws: &mut Workspace, by: i64, cx: &mut Context<Workspace>) {
     if i >= 0 && (i as usize) < d.pages.len() {
         ws.run("page.select", json!({ "page": (i + 1).to_string() }), cx);
     }
+}
+
+pub fn edit_smart_source(id:String,cx:&mut App) {
+    let path=std::env::temp_dir().join(format!("nori-source-{}.nori",uuid::Uuid::new_v4()));
+    cx.store().update(cx,|s,cx|s.run_then("layer.extractSmartObject",json!({"layerId":id,"path":path}),cx,move |s,v,cx|s.run("doc.open",json!({"path":v["path"]}),cx)));
+}
+pub fn replace_smart_source(id:String,cx:&mut App) {
+    let store=cx.store();let doc_id=store.read(cx).session.snapshot().ok().map(|(_,_,id)|id);
+    let rx=cx.prompt_for_paths(PathPromptOptions{files:true,directories:false,multiple:false,prompt:Some("Replace contents".into())});
+    cx.spawn(async move |cx|{
+        let Ok(Ok(Some(paths)))=rx.await else{return};let Some(path)=paths.first() else{return};
+        store.update(cx,|s,cx|{
+            if s.session.snapshot().ok().map(|(_,_,id)|id)!=doc_id {s.flash("Return to the original document to replace its contents.",cx);return;}
+            s.run("layer.replaceSmartObject",json!({"layerId":id,"path":path}),cx);
+        });
+    }).detach();
+}
+
+fn quit_dialog(window:&mut Window,cx:&mut App) {
+    let store=cx.store();let session=store.read(cx).session.clone();
+    if !session.tabs().iter().any(|t|t["dirty"]==true){cx.quit();return;}
+    let rx=window.prompt(gpui::PromptLevel::Warning,"Save changes before quitting?",Some("There are unsaved documents. Save all requires each untitled tab to have a file name."),&["Cancel","Save all and quit","Discard all and quit"],cx);
+    cx.spawn(async move |cx|{
+        match rx.await {
+            Ok(1)=>match session.save_all(){Ok(())=>{cx.update(|cx|cx.quit());},Err(e)=>{store.update(cx,|s,cx|s.flash(e,cx));}},
+            Ok(2)=>{cx.update(|cx|cx.quit());},_=>{}
+        }
+    }).detach();
+}
+pub fn close_document(window:&mut Window,cx:&mut App) {
+    let store=cx.store();let s=store.read(cx);let Some((_,_,id))=s.session.snapshot().ok() else{return};
+    if !s.session.tabs().iter().any(|t|t["id"]==id && t["dirty"]==true) {store.update(cx,|s,cx|s.run("doc.close",json!({}),cx));return;}
+    let rx=window.prompt(gpui::PromptLevel::Warning,"Save changes before closing?",None,&["Cancel","Save","Discard"],cx);
+    cx.spawn(async move |cx|{
+        let Ok(answer)=rx.await else{return};
+        store.update(cx,|s,cx|{
+            if s.session.snapshot().ok().map(|(_,_,i)|i)!=Some(id){return;}
+            match answer {
+                1=>{ if s.saved_to.is_some(){s.run_then("doc.save",json!({}),cx,move |s,_,cx|{if s.session.snapshot().ok().map(|(_,_,i)|i)==Some(id){s.run("doc.close",json!({}),cx)}});}else{ s.flash("Save this untitled document with File › Save, then close it.",cx); }},
+                2=>s.run("doc.close",json!({"discard":true}),cx),_=>{}
+            }
+        });
+    }).detach();
 }

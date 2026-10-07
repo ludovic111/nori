@@ -47,12 +47,13 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
                 let m = nori_render::filters::margin(spec.id, &values);
                 (Runner::Stock(spec.id, values), m)
             };
-            let (doc, rev, _) = s.snapshot()?;
+            let (doc, rev, doc_id) = s.snapshot()?;
             let id = util::layer_id(&doc, &a)?;
             let host = s.plugins.clone();
             let result = tokio::task::spawn_blocking(move || -> CmdResult<(nori_core::Raster, i32, i32, nori_core::Rect, bool)> {
                 let l = doc.layer(&id).ok_or("no layer")?;
                 util::unlocked(l)?;
+                if l.smart_source.is_some() { return Err("Rasterize the smart object or edit its source before applying a destructive filter.".into()); }
                 // Text, vectors and fills become pixels first.
                 let rasterize = l.raster().is_none();
                 let (x, y, mut px) = super::layer::rasterized(&doc, &id)?;
@@ -79,7 +80,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             .map_err(|e| e.to_string())??;
             let (px, x, y, changed, rasterize) = result;
             let id2 = util::layer_id(&s.document()?, &a)?;
-            s.edit_at(rev, cx.label(), cx.source, move |d| {
+            s.edit_at(doc_id,rev, cx.label(), cx.source, move |d| {
                 let l = d.layer_mut(&id2).ok_or("no layer")?;
                 l.content = Content::Raster { x, y, pixels: px };
                 Ok(json!({ "layerId": id2, "filter": fid, "changed": [changed.x, changed.y, changed.w, changed.h], "rasterized": rasterize }))
@@ -91,11 +92,12 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
                 adj = adj.merge(o)?;
             }
             let compiled = nori_render::adjust::compile(&adj);
-            let (doc, rev, _) = s.snapshot()?;
+            let (doc, rev, doc_id) = s.snapshot()?;
             let id = util::layer_id(&doc, &a)?;
             let (px, x, y) = tokio::task::spawn_blocking(move || -> CmdResult<(nori_core::Raster, i32, i32)> {
                 let l = doc.layer(&id).ok_or("no layer")?;
                 util::unlocked(l)?;
+                if l.smart_source.is_some() { return Err("Rasterize the smart object or edit its source before applying a destructive filter.".into()); }
                 let (x, y, mut px) = super::layer::rasterized(&doc, &id)?;
                 nori_render::filters::apply_in_selection(&mut px, x, y, doc.selection.as_ref(), 0, |buf, _, _, _| {
                     for p in buf.iter_mut() {
@@ -113,7 +115,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             .map_err(|e| e.to_string())??;
             let id2 = util::layer_id(&s.document()?, &a)?;
             let label = adj.label();
-            s.edit_at(rev, cx.label(), cx.source, move |d| {
+            s.edit_at(doc_id,rev, cx.label(), cx.source, move |d| {
                 let l = d.layer_mut(&id2).ok_or("no layer")?;
                 l.content = Content::Raster { x, y, pixels: px };
                 Ok(json!({ "layerId": id2, "adjusted": label }))

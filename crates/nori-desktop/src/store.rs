@@ -461,6 +461,7 @@ impl Store {
 
     fn on_event(&mut self, event: Event, cx: &mut Context<Self>) {
         match event {
+            Event::Update { .. } => cx.notify(),
             Event::DocChanged { .. } => self.refresh_doc(),
             Event::DocSwitched { .. } => {
                 self.refresh_doc();

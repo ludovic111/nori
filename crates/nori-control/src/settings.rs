@@ -11,6 +11,7 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
+#[derive(Default)]
 pub struct Settings {
     pub agent: AgentSettings,
     pub updates: UpdateSettings,
@@ -24,21 +25,6 @@ pub struct Settings {
     pub recent: Vec<String>,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            agent: AgentSettings::default(),
-            updates: UpdateSettings::default(),
-            appearance: Appearance::default(),
-            diagnostics: DiagnosticsSettings::default(),
-            onboarding: OnboardingSettings::default(),
-            tools: ToolSettings::default(),
-            history: HistorySettings::default(),
-            plugins: PluginSettings::default(),
-            recent: vec![],
-        }
-    }
-}
 
 /// The first-run setup (`app.onboarding`, `app.finishOnboarding`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -101,6 +87,8 @@ impl Default for Permissions {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UpdateSettings {
+    /// Install verified updates in the background when enabled.
+    pub auto_install: bool,
     /// Check GitHub Releases when the app starts. `NORI_NO_UPDATE=1` also turns it off.
     pub check_on_start: bool,
     /// Show what's new once after nori updates.
@@ -109,7 +97,7 @@ pub struct UpdateSettings {
 
 impl Default for UpdateSettings {
     fn default() -> Self {
-        Self { check_on_start: true, show_whats_new: true }
+        Self { auto_install: false, check_on_start: true, show_whats_new: true }
     }
 }
 

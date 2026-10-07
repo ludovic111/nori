@@ -989,7 +989,7 @@ async fn the_agent_is_told_what_the_person_sees() {
     assert!(block.contains("Window: tool brush, zoom 50 %."), "{block}");
     assert!(block.contains("Also open: export.") && !block.contains("agent,"), "{block}");
     assert_eq!(g.short, "Selection 100×50 · 400×300");
-    nori_control::call(&s, Source::Window, "doc.close", json!({})).await.unwrap();
+    nori_control::call(&s, Source::Window, "doc.close", json!({"discard":true})).await.unwrap();
     assert_eq!(glance(&s).short, "No document open");
 }
 

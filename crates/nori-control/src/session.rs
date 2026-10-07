@@ -132,6 +132,7 @@ pub struct UiState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    Update { status: crate::update::UpdateStatus },
     /// The open document changed (any client).
     DocChanged { doc_id: DocId, revision: u64 },
     /// Another document was opened, or it was closed (`None`).
@@ -190,11 +191,13 @@ impl Default for Colors {
 }
 
 pub struct Session {
+    pub update: Mutex<crate::update::UpdateState>,
     pub data_dir: PathBuf,
     pub config_dir: PathBuf,
     pub headless: bool,
     secrets: Arc<dyn SecretStore>,
     doc: Mutex<Option<OpenDoc>>,
+    tabs: Mutex<Vec<OpenDoc>>,
     settings: RwLock<Settings>,
     events: broadcast::Sender<Event>,
     ui: Mutex<Option<mpsc::UnboundedSender<UiCall>>>,
@@ -228,8 +231,10 @@ impl Session {
             data_dir,
             config_dir,
             headless: opts.headless,
+            update: Mutex::new(crate::update::UpdateState::default()),
             secrets,
             doc: Mutex::new(None),
+            tabs: Mutex::new(vec![]),
             settings: RwLock::new(settings),
             events,
             ui: Mutex::new(None),
@@ -385,13 +390,17 @@ impl Session {
         self.doc.lock().as_ref().map(|d| (d.path.clone(), d.source.clone(), d.editor.is_dirty()))
     }
 
-    /// Opens `doc` (replacing whatever was open) and announces it.
+    /// Opens a new tab, retaining each document and its own undo history.
     pub fn open_doc(&self, doc: Document, path: Option<PathBuf>, source: Option<PathBuf>, autosave: bool) -> DocId {
         let id = self.next_doc.fetch_add(1, Ordering::Relaxed);
         let s = self.settings();
         let mut editor = Editor::new(doc);
         editor.set_limits(s.history.steps as usize, s.history.memory_mb as usize * (1 << 20));
-        *self.doc.lock() = Some(OpenDoc { id, editor, path, source, autosave });
+        {
+            let mut current = self.doc.lock();
+            if let Some(previous) = current.take() { self.tabs.lock().push(previous); }
+            *current = Some(OpenDoc { id, editor, path, source, autosave });
+        }
         self.emit(Event::DocSwitched { doc_id: Some(id) });
         id
     }
@@ -404,10 +413,57 @@ impl Session {
         }
     }
 
-    pub fn close_doc(&self) {
-        if self.doc.lock().take().is_some() {
-            self.emit(Event::DocSwitched { doc_id: None });
+    pub fn tabs(&self) -> Vec<Value> {
+        let current = self.doc.lock();
+        let other = self.tabs.lock();
+        let active = current.as_ref().map(|d| d.id);
+        let mut list: Vec<_> = current.iter().chain(other.iter()).map(|d| serde_json::json!({
+            "id": d.id, "name": d.editor.doc().name, "path": d.path, "dirty": d.editor.is_dirty(), "active": Some(d.id) == active
+        })).collect();
+        list.sort_by_key(|d| d["id"].as_u64());
+        list
+    }
+
+    pub fn select_doc(&self, id: DocId) -> CmdResult<()> {
+        {
+            let mut current = self.doc.lock();
+            if current.as_ref().is_some_and(|d| d.id == id) { return Ok(()); }
+            let mut tabs = self.tabs.lock();
+            let at = tabs.iter().position(|d| d.id == id).ok_or("No tab with this document id.")?;
+            let next = tabs.remove(at);
+            if let Some(previous) = current.replace(next) { tabs.push(previous); }
         }
+        self.emit(Event::DocSwitched { doc_id: Some(id) });
+        Ok(())
+    }
+
+    pub fn close_doc(&self, discard: bool) -> CmdResult<()> {
+        let next = {
+            let mut current = self.doc.lock();
+            if !discard && current.as_ref().is_some_and(|d| d.editor.is_dirty()) {
+                return Err("Save this document before closing, or use discard=true to discard its changes.".into());
+            }
+            *current = self.tabs.lock().pop();
+            current.as_ref().map(|d| d.id)
+        };
+        self.emit(Event::DocSwitched { doc_id: next });
+        Ok(())
+    }
+
+    /// Saves every dirty tab. An untitled tab must receive a file name first.
+    pub fn save_all(&self) -> CmdResult<()> {
+        let mut current = self.doc.lock();
+        let mut others = self.tabs.lock();
+        if current.iter().chain(others.iter()).any(|d| d.editor.is_dirty() && d.path.is_none()) {
+            return Err("Save each untitled document before restarting.".into());
+        }
+        for d in current.iter_mut().chain(others.iter_mut()) {
+            if d.editor.is_dirty() {
+                save_file(d.editor.doc(), d.path.as_ref().unwrap())?;
+                d.editor.mark_saved();
+            }
+        }
+        Ok(())
     }
 
     pub fn checkpoint(&self) -> Option<(DocId, u64)> {
@@ -419,8 +475,15 @@ impl Session {
     /// Changes the open document with `f` as one undo step (or part of the open batch),
     /// recorded as `label` from `source`; then saves (autosave documents) and announces it.
     pub fn edit<R>(&self, label: &str, source: Source, coalesce: Option<&str>, f: impl FnOnce(&mut Document) -> Result<R, String>) -> CmdResult<R> {
+        self.edit_checked(None, label, source, coalesce, f)
+    }
+
+    fn edit_checked<R>(&self, expected: Option<(DocId,u64)>, label: &str, source: Source, coalesce: Option<&str>, f: impl FnOnce(&mut Document) -> Result<R,String>) -> CmdResult<R> {
         let mut g = self.doc.lock();
         let d = g.as_mut().ok_or(NO_DOCUMENT)?;
+        if expected.is_some_and(|(id,rev)| d.id!=id || d.editor.revision()!=rev) {
+            return Err("The document changed while this was being worked out; run it again.".into());
+        }
         d.editor.set_step_info(label, source.as_str());
         d.editor.set_outsider(d.editor.in_batch() && !in_batch_scope());
         let r = d.editor.change(coalesce, f);
@@ -447,15 +510,8 @@ impl Session {
 
     /// Like [`edit`](Self::edit), but only if the document is still at `revision` (work done on
     /// a snapshot outside the lock lands only on the state it was computed from).
-    pub fn edit_at<R>(&self, revision: u64, label: &str, source: Source, f: impl FnOnce(&mut Document) -> Result<R, String>) -> CmdResult<R> {
-        {
-            let g = self.doc.lock();
-            let d = g.as_ref().ok_or(NO_DOCUMENT)?;
-            if d.editor.revision() != revision {
-                return Err("The document changed while this was being worked out; run it again.".into());
-            }
-        }
-        self.edit(label, source, None, f)
+    pub fn edit_at<R>(&self, doc_id: DocId, revision: u64, label: &str, source: Source, f: impl FnOnce(&mut Document) -> Result<R,String>) -> CmdResult<R> {
+        self.edit_checked(Some((doc_id,revision)),label,source,None,f)
     }
 
     /// Runs `f` on the editor itself (undo, redo, batches, checkpoints), then announces it.
@@ -489,22 +545,26 @@ impl Session {
 
     /// Saves the open document to `path` (or where it saves), as a `.nori` file.
     pub fn save(&self, path: Option<PathBuf>) -> CmdResult<PathBuf> {
-        let (doc, target) = {
-            let g = self.doc.lock();
-            let d = g.as_ref().ok_or(NO_DOCUMENT)?;
-            let target = path.or_else(|| d.path.clone()).ok_or("This document hasn't been saved yet: give a path (a .nori file).")?;
-            (d.editor.doc().clone(), target)
+        let (_,_,id)=self.snapshot()?;self.save_document(id,path)
+    }
+
+    pub fn save_document(&self, id: DocId, path: Option<PathBuf>) -> CmdResult<PathBuf> {
+        let (doc, revision, target) = {
+            let current=self.doc.lock();let other=self.tabs.lock();
+            let d=current.iter().chain(other.iter()).find(|d|d.id==id).ok_or("The document was closed before saving.")?;
+            let target=path.or_else(||d.path.clone()).ok_or("This document hasn't been saved yet: give a .nori path.")?;
+            (d.editor.doc().clone(),d.editor.revision(),target)
         };
-        let target = if target.extension().is_some_and(|e| e.eq_ignore_ascii_case("nori")) { target } else { target.with_extension("nori") };
-        save_file(&doc, &target)?;
-        let mut g = self.doc.lock();
-        if let Some(d) = g.as_mut() {
-            d.path = Some(target.clone());
-            d.editor.mark_saved();
+        let target=if target.extension().is_some_and(|e|e.eq_ignore_ascii_case("nori")){target}else{target.with_extension("nori")};
+        save_file(&doc,&target)?;
+        {
+            let mut current=self.doc.lock();let mut other=self.tabs.lock();
+            if let Some(d)=current.iter_mut().chain(other.iter_mut()).find(|d|d.id==id){
+                d.path=Some(target.clone());
+                if d.editor.revision()==revision { d.editor.mark_saved(); }
+            }
         }
-        drop(g);
-        self.remember(&target);
-        Ok(target)
+        self.remember(&target);self.emit(Event::DocChanged{doc_id:id,revision});Ok(target)
     }
 
     pub fn bridge_port(&self) -> Option<u16> {

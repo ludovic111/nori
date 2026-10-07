@@ -167,7 +167,7 @@ impl Dialogs {
             "jpeg" => format!("{w}×{h} pixels, no transparency."),
             _ => format!("{w}×{h} pixels."),
         };
-        let formats: Vec<(&'static str, SharedString)> = vec![("png", "PNG".into()), ("jpeg", "JPEG".into()), ("webp", "WebP".into()), ("tiff", "TIFF".into()), ("pdf", "PDF".into()), ("svg", "SVG".into()), ("ora", "ORA".into())];
+        let formats: Vec<(&'static str, SharedString)> = vec![("png", "PNG".into()), ("jpeg", "JPEG".into()), ("webp", "WebP".into()), ("tiff", "TIFF".into()), ("pdf", "PDF".into()), ("svg", "SVG".into()), ("ora", "ORA".into()), ("psd", "PSD".into()), ("idml", "IDML".into())];
         let kimchi = nori_control::discovery::find("kimchi").is_some_and(|k| k.running.is_some());
         body(
             "Export",
@@ -208,7 +208,8 @@ impl Dialogs {
     // ---- filter ----------------------------------------------------------------------------
 
     fn filter(&mut self, id: &str, cx: &mut Context<Self>) -> AnyElement {
-        let (name, params): (String, Vec<(String, String, f64, f64, f64, String, String)>) = if let Some(p) = id.strip_prefix("plugin:") {
+        type FilterField = (String, String, f64, f64, f64, String, String);
+        let (name, params): (String, Vec<FilterField>) = if let Some(p) = id.strip_prefix("plugin:") {
             let s = self.store.read(cx);
             let f = s.session.plugins.find(p);
             match f {
@@ -278,7 +279,7 @@ impl Dialogs {
 
     fn settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let t = cx.theme().clone();
-        let sections = [("appearance", "Appearance", "sun-moon"), ("agent", "Agent", "bot"), ("account", "lsuite AI", "sparkles"), ("about", "About", "info")];
+        let sections = [("appearance", "Appearance", "sun-moon"), ("agent", "Agent", "bot"), ("account", "lsuite AI", "sparkles"), ("updates", "Updates", "refresh-cw"), ("about", "About", "info")];
         let current = self.section.clone();
         let nav = div().w(px(180.)).flex_none().flex().flex_col().gap(px(2.)).p(px(10.)).border_r_1().border_color(t.line).children(sections.iter().map(|(id, label, ic)| {
             let sel = current == *id;
@@ -303,6 +304,7 @@ impl Dialogs {
         let content = match current.as_str() {
             "agent" => self.agent_settings(cx),
             "account" => account_section(cx),
+            "updates" => update_controls(cx),
             "about" => about_section(cx),
             _ => appearance_section(cx),
         };
@@ -713,7 +715,7 @@ impl Render for Dialogs {
         let dialog = self.store.read(cx).dialog.clone();
         if let Some(Dialog::Settings { section: Some(sec) }) = &dialog
             && self.section != *sec
-            && ["appearance", "agent", "account", "about"].contains(&sec.as_str())
+            && ["appearance", "agent", "account", "updates", "about"].contains(&sec.as_str())
         {
             self.section = sec.clone();
             self.store.update(cx, |s, _| s.dialog = Some(Dialog::Settings { section: None }));
@@ -730,4 +732,27 @@ impl Render for Dialogs {
         };
         div().when(el.is_some(), |d| d.absolute().inset_0()).children(el)
     }
+}
+
+fn update_controls(cx: &App) -> AnyElement {
+    let store = cx.store();
+    let s = store.read(cx);
+    let status = nori_control::update::status(&s.session);
+    let message = if let Some(error) = &status.error { error.clone() }
+        else if status.ready { "Update installed. Restart to use it.".into() }
+        else if let Some(p) = status.progress { format!("Downloading and verifying: {:.0}%", p * 100.) }
+        else if let Some(version) = &status.available { format!("nori {version} is available.") }
+        else if status.checked_at.is_some() { format!("nori {} is up to date.", status.current) }
+        else { format!("nori {} · signed updates", status.current) };
+    div().flex().flex_col().gap(px(10.))
+        .child(div().text_size(px(sz::SM)).child(message))
+        .child(crate::ui::switch("auto-install-updates", "Install verified updates automatically", s.settings.updates.auto_install,
+            |on, _, cx| cx.store().update(cx, |s, cx| s.run("app.setSetting", json!({"key":"updates.autoInstall","value":on}), cx)), cx))
+        .child(div().flex().flex_wrap().gap(px(8.))
+            .child(Button::new("check-updates-now", "Check now").small().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("app.checkUpdates", json!({}), cx))))
+            .when(status.can_install && status.progress.is_none() && !status.ready, |d| d.child(Button::new("install-update", "Install update").small().primary().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("app.installUpdate", json!({}), cx)))))
+            .when(status.ready, |d| d.child(Button::new("restart-update", "Restart nori").small().primary().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("app.restart", json!({}), cx)))))
+            .when(status.available.is_some() && !status.can_install && !status.ready, |d| d.child(Button::new("download-update", "Open downloads").small().on_click(|_, _, cx| cx.open_url("https://lsuite.xyz/nori/download")))))
+        .children(status.install_blocked.map(|message| div().text_size(px(sz::SM)).child(message)))
+        .into_any_element()
 }

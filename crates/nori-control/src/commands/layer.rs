@@ -12,6 +12,7 @@ use crate::session::{CmdResult, Session};
 
 pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
     match cx.spec.name {
+        "layer.makeSmartObject" | "layer.resizeSmartObject" | "layer.replaceSmartObject" | "layer.extractSmartObject" => super::smart::run(s, cx, a).await,
         "layer.list" => {
             let d = s.document()?;
             let r = util::page_ref(&d, &a)?;
@@ -338,10 +339,10 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
         }),
         "layer.merge" => merge(s, cx, &a).await,
         "layer.flatten" => {
-            let (doc, rev, _) = s.snapshot()?;
+            let (doc, rev, doc_id) = s.snapshot()?;
             let page = doc.page().clone();
             let rgba = tokio::task::spawn_blocking(move || nori_render::flatten_page(&doc, &page)).await.map_err(|e| e.to_string())?;
-            s.edit_at(rev, cx.label(), cx.source, move |d| {
+            s.edit_at(doc_id,rev, cx.label(), cx.source, move |d| {
                 let (w, h) = (d.width(), d.height());
                 let id = d.new_id();
                 let page = d.page_mut();
@@ -351,7 +352,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             })
         }
         "layer.rasterize" => {
-            let (doc, rev, _) = s.snapshot()?;
+            let (doc, rev, doc_id) = s.snapshot()?;
             let id = util::layer_id(&doc, &a)?;
             let pixels = tokio::task::spawn_blocking({
                 let id = id.clone();
@@ -359,11 +360,12 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             })
             .await
             .map_err(|e| e.to_string())??;
-            s.edit_at(rev, cx.label(), cx.source, move |d| {
+            s.edit_at(doc_id,rev, cx.label(), cx.source, move |d| {
                 let l = d.layer_mut(&id).ok_or("no layer")?;
                 util::unlocked(l)?;
                 let (x, y, px) = pixels;
                 l.content = Content::Raster { x, y, pixels: px };
+                l.smart_source = None;
                 l.blend = if l.blend == BlendMode::PassThrough { BlendMode::Normal } else { l.blend };
                 Ok(json!({ "layerId": id }))
             })
@@ -406,7 +408,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
                     let r = Rect::new(*x, *y, px.width(), px.height());
                     let mut data = px.read_rect(Rect::new(0, 0, r.w, r.h));
                     let mv = mask.read_rect(r);
-                    for (i, p) in data.chunks_exact_mut(4).enumerate() {
+                    for (i, p) in data.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                         p[3] = ((p[3] as u32 * mv[i] as u32 + 127) / 255) as u8;
                     }
                     px.write_rect(Rect::new(0, 0, r.w, r.h), &data);
@@ -481,12 +483,12 @@ pub fn rasterized(d: &Document, id: &str) -> CmdResult<(i32, i32, Raster)> {
 }
 
 async fn merge(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
-    let (doc, rev, _) = s.snapshot()?;
+    let (doc, rev, doc_id) = s.snapshot()?;
     let mode = a.opt_str("mode").unwrap_or("down").to_string();
     if mode == "visible" {
         let page = doc.page().clone();
         let rgba = tokio::task::spawn_blocking(move || nori_render::flatten_page(&doc, &page)).await.map_err(|e| e.to_string())?;
-        return s.edit_at(rev, cx.label(), cx.source, move |d| {
+        return s.edit_at(doc_id,rev, cx.label(), cx.source, move |d| {
             let (w, h) = (d.width(), d.height());
             let id = d.new_id();
             let page = d.page_mut();
@@ -518,7 +520,7 @@ async fn merge(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
     })
     .await
     .map_err(|e| e.to_string())?;
-    s.edit_at(rev, cx.label(), cx.source, move |d| {
+    s.edit_at(doc_id,rev, cx.label(), cx.source, move |d| {
         let (rgba, w, h) = rgba;
         let full = Raster::from_rgba(w, h, &rgba);
         let bnd = full.content_bounds().unwrap_or(Rect::new(0, 0, 1, 1));
@@ -534,7 +536,7 @@ async fn merge(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
 }
 
 async fn transform(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
-    let (doc, rev, _) = s.snapshot()?;
+    let (doc, rev, doc_id) = s.snapshot()?;
     let id = util::layer_id(&doc, a)?;
     let l = doc.layer(&id).ok_or("no layer")?.clone();
     util::unlocked(&l)?;
@@ -562,6 +564,7 @@ async fn transform(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
     let new = tokio::task::spawn_blocking(move || -> CmdResult<Layer> {
         fn apply(l: &mut Layer, m: &[f32; 6], p: (f32, f32, f32, f32, f32, f32, f32, f32), filter: nori_render::transform::Filter) -> CmdResult<()> {
             let (sx, sy, rot, cx, cy, dx, dy, _) = p;
+            if l.smart_source.is_some() { return Err("Use layer.resizeSmartObject to resize from the original, or rasterize before rotating/flipping.".into()); }
             match &mut l.content {
                 Content::Raster { x, y, pixels } => {
                     let (np, nx, ny) = nori_render::transform::affine(pixels, *x, *y, sx, sy, rot, cx, cy, dx, dy, filter);
@@ -613,7 +616,7 @@ async fn transform(s: &Arc<Session>, cx: &Ctx, a: &Args) -> CmdResult {
     })
     .await
     .map_err(|e| e.to_string())??;
-    s.edit_at(rev, cx.label(), cx.source, move |d| {
+    s.edit_at(doc_id,rev, cx.label(), cx.source, move |d| {
         let slot = d.layer_mut(&id).ok_or("no layer")?;
         *slot = new;
         let nb = d.layer(&id).and_then(|l| util::bounds(d, l));

@@ -24,6 +24,7 @@ esac
 version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
 [ -n "$version" ] || { echo "No version in Cargo.toml [workspace.package]" >&2; exit 1; }
 identity=${APPLE_SIGNING_IDENTITY:--}
+APPLE_API_KEY=${APPLE_API_KEY:-${APPLE_API_KEY_ID:-}}
 resources=crates/nori-desktop/resources
 dist=target/dist
 app="$dist/$triple/nori.app"

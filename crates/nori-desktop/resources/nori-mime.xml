@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The .nori type for shared-mime-info (installed as /usr/share/mime/packages/nori.xml by the
+     .deb; scripts/bundle-linux.sh). A .nori file is a zip of JSON and media. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.lsuite.nori">
+    <comment>nori document</comment>
+    <sub-class-of type="application/zip"/>
+    <generic-icon name="x-office-document"/>
+    <glob pattern="*.nori"/>
+  </mime-type>
+</mime-info>

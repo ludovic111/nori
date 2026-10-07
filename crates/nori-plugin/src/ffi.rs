@@ -209,8 +209,8 @@ unsafe extern "C" fn process<P: Filter>(instance: *mut c_void, tile: *mut RawTil
             for p in t.pixels.iter_mut() {
                 let a = if p[3].is_finite() { p[3].clamp(0.0, 1.0) } else { 0.0 };
                 p[3] = a;
-                for c in 0..3 {
-                    p[c] = if p[c].is_finite() { p[c].clamp(0.0, a) } else { 0.0 };
+                for c in p.iter_mut().take(3) {
+                    *c = if c.is_finite() { c.clamp(0.0, a) } else { 0.0 };
                 }
             }
             OK

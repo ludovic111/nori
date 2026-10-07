@@ -1,130 +1,181 @@
 name: Release
 
-# A tag v<version> builds the macOS app (Apple Silicon and Intel), the Linux and Windows binaries,
-# and publishes them on the GitHub release with stable names (lsuite.xyz/nori/download/<platform>
-# looks for them). Secrets (none are set yet): APPLE_CERTIFICATE (base64 .p12),
-# APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY, APPLE_API_KEY, APPLE_API_ISSUER,
-# APPLE_API_KEY_CONTENT. Without them the macOS build is ad-hoc signed and not notarized.
-
+# Builds nori for macOS (Apple Silicon + Intel), Windows and Linux with the scripts in scripts/
+# and attaches everything to a draft GitHub release. Publish the draft to ship it.
+#
+# Asset names are stable (no version) so lsuite.xyz/nori/download/<platform> always finds them:
+# nori_aarch64.dmg, nori_x64.dmg, nori_{aarch64,x64}.app.tar.gz, nori_x64-setup.exe,
+# nori_x64-portable.zip, nori_amd64.AppImage, nori_amd64.deb (plus SHA256SUMS).
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
-env:
-  CARGO_TERM_COLOR: always
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  macos:
-    name: macOS (${{ matrix.target }})
-    runs-on: macos-latest
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    env:
+      HAS_APPLE_SIGNING: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' && secrets.APPLE_API_KEY_P8_BASE64 != '' }}
     strategy:
       fail-fast: false
       matrix:
-        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+        include:
+          - { name: macOS (Apple Silicon), os: macos-latest, target: aarch64-apple-darwin, script: bundle-macos.sh }
+          - { name: macOS (Intel), os: macos-15-intel, target: x86_64-apple-darwin, script: bundle-macos.sh }
+          - { name: Windows, os: windows-latest, target: x86_64-pc-windows-msvc, script: bundle-windows.sh }
+          - { name: Linux, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, script: bundle-linux.sh }
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the tag matches the version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the workspace version $version in Cargo.toml." >&2
+            exit 1
+          fi
+
+      # GPUI's Linux backends (X11 + Wayland, Vulkan, fontconfig) and the keychain (D-Bus);
+      # see script/linux in the zed repository.
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config clang libasound2-dev libdbus-1-dev libfontconfig-dev libfreetype-dev \
+            libssl-dev libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libzstd-dev libglib2.0-dev desktop-file-utils
+
+      - name: NSIS (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          if ! command -v makensis > /dev/null && [ ! -x "/c/Program Files (x86)/NSIS/makensis.exe" ]; then
+            choco install nsis -y --no-progress
+          fi
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
-      - name: Signing keychain
-        if: env.APPLE_CERTIFICATE != ''
+
+      # Developer ID signing and notarization on macOS, with the same secrets as ryolune and kimchi
+      # (APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+      # APPLE_API_KEY_P8_BASE64, APPLE_API_KEY_ID, APPLE_API_ISSUER). Without them the build is
+      # ad-hoc signed.
+      - name: Apple signing and notarization (macOS)
+        if: runner.os == 'macOS' && env.HAS_APPLE_SIGNING == 'true'
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
-        run: |
-          echo "$APPLE_CERTIFICATE" | base64 --decode > cert.p12
-          security create-keychain -p ci build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p ci build.keychain
-          security import cert.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
-          mkdir -p ~/private_keys && echo "$APPLE_API_KEY_CONTENT" > ~/private_keys/api.p8
-          echo "APPLE_API_KEY_PATH=$HOME/private_keys/api.p8" >> "$GITHUB_ENV"
-      - name: Build and bundle
-        env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: bash scripts/bundle-macos.sh ${{ matrix.target }}
+        run: bash scripts/prepare-apple-signing.sh
+
+      - name: Require release credentials
+        env:
+          UPDATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          test -n "$UPDATE_KEY"
+          if [ "$RUNNER_OS" = macOS ]; then test "$HAS_APPLE_SIGNING" = true; fi
+
+      - name: Build and package
+        run: bash scripts/${{ matrix.script }} ${{ runner.os == 'macOS' && matrix.target || '' }}
+
+      - name: Sign and verify updater archives
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          cargo build --release --locked -p nori-release
+          for file in target/dist/*.app.tar.gz target/dist/*.exe target/dist/*.zip target/dist/*.AppImage target/dist/*.deb; do
+            [ -f "$file" ] || continue
+            target/release/nori-release sign "$file" --version "$version"
+            target/release/nori-release verify "$file" --version "$version"
+          done
+
+      - name: Remove signing keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          if [ -f "$RUNNER_TEMP/signing.keychain-db" ]; then security delete-keychain "$RUNNER_TEMP/signing.keychain-db"; fi
+          rm -f "$RUNNER_TEMP/notary.p8"
+
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.target }}
+          name: nori-${{ matrix.target }}
           path: |
-            target/dist/*.dmg
-            target/dist/*.app.tar.gz
-
-  linux:
-    name: Linux
-    runs-on: ubuntu-22.04
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-      - name: Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config clang libasound2-dev libdbus-1-dev libfontconfig-dev libfreetype-dev \
-            libssl-dev libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libzstd-dev libglib2.0-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --release --locked -p nori -p nori-cli -p nori-mcp
-      - name: Package
-        run: |
-          mkdir -p dist/nori
-          cp target/release/nori target/release/nori-cli target/release/nori-mcp dist/nori/
-          cp crates/nori-desktop/resources/nori.png crates/nori-desktop/resources/nori.desktop dist/nori/
-          tar -C dist -czf dist/nori_linux_x64.tar.gz nori
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux
-          path: dist/nori_linux_x64.tar.gz
-
-  windows:
-    name: Windows
-    runs-on: windows-latest
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --release --locked -p nori -p nori-cli -p nori-mcp
-      - name: Package
-        shell: bash
-        run: |
-          mkdir -p dist/nori
-          cp target/release/nori.exe target/release/nori-cli.exe target/release/nori-mcp.exe dist/nori/
-          cd dist && 7z a nori_windows_x64.zip nori
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows
-          path: dist/nori_windows_x64.zip
+            target/dist/nori-macos-*.dmg
+            target/dist/nori-macos-*.app.tar.gz
+            target/dist/nori-windows-*.exe
+            target/dist/nori-windows-*.zip
+            target/dist/nori-linux-*.AppImage
+            target/dist/nori-linux-*.deb
+            target/dist/*.sig
+          if-no-files-found: error
 
   release:
-    needs: [macos, linux, windows]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Draft release
+    needs: build
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
-      - name: Notes
+          path: dist
+          merge-multiple: true
+
+      - name: Notes and checksums
         run: |
-          v=${GITHUB_REF_NAME#v}
-          awk -v v="$v" '/^## /{p = index($0, v) > 0; next} p' CHANGELOG.md > notes.md
-      - uses: softprops/action-gh-release@v2
-        with:
-          body_path: notes.md
-          prerelease: true
-          files: artifacts/**/*
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          # What changed: CHANGELOG.md's section for this version, when there is one.
+          if [ -f CHANGELOG.md ]; then
+            awk -v v="$version" '/^## /{p = ($2 == v); next} p' CHANGELOG.md | sed -e '/./,$!d' > "$RUNNER_TEMP/notes.md"
+          fi
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "nori $version: documents, sheets and slides in one file." > "$RUNNER_TEMP/notes.md"
+          fi
+          cat >> "$RUNNER_TEMP/notes.md" <<'NOTES'
+
+          ### Download
+          Download the build for your system below.
+
+          - **macOS**: `nori_aarch64.dmg` (Apple Silicon) or `nori_x64.dmg` (Intel).
+          - **Windows**: `nori_x64-setup.exe` (installer) or `nori_x64-portable.zip`.
+          - **Linux**: `nori_amd64.AppImage` or `nori_amd64.deb`.
+          NOTES
+          (cd dist && sha256sum nori-* > SHA256SUMS)
+          ls -l dist
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify and create updater manifest
+        run: cargo run --release --locked -p nori-release -- manifest dist --version "$VERSION" --base-url "https://github.com/ludovic111/nori/releases/download/v$VERSION" --out dist/latest.json
+
+      - name: Upload to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$VERSION"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            if [ "$(gh release view "$tag" --json isDraft -q .isDraft)" != true ]; then
+              echo "Release $tag is already published; not replacing its files." >&2
+              exit 1
+            fi
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* --draft --target "$GITHUB_SHA" --title "nori $tag" \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          fi

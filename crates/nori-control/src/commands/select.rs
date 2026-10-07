@@ -83,7 +83,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             let tolerance = a.opt_i64("tolerance").unwrap_or(tools.tolerance as i64).clamp(0, 255) as u8;
             let contiguous = a.bool_or("contiguous", tools.contiguous);
             let sample_all = a.bool_or("sampleAll", true);
-            let (doc, rev, _) = s.snapshot()?;
+            let (doc, rev, doc_id) = s.snapshot()?;
             let region = tokio::task::spawn_blocking(move || -> CmdResult<Mask> {
                 let (w, h) = (doc.width(), doc.height());
                 let rgba = match (sample_all, doc.active_id().and_then(|id| doc.layer(&id).and_then(|l| l.raster()).map(|(lx, ly, p)| p.read_rect(Rect::new(-lx, -ly, w, h))))) {
@@ -94,21 +94,21 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             })
             .await
             .map_err(|e| e.to_string())??;
-            s.edit_at(rev, cx.label(), cx.source, |d| Ok(set(d, region, how)))
+            s.edit_at(doc_id,rev, cx.label(), cx.source, |d| Ok(set(d, region, how)))
         }
         "select.layer" => {
             let how = combine(&a)?;
-            let (doc, rev, _) = s.snapshot()?;
+            let (doc, rev, doc_id) = s.snapshot()?;
             let id = util::layer_id(&doc, &a)?;
             let m = tokio::task::spawn_blocking(move || -> CmdResult<Mask> {
                 let (w, h) = (doc.width(), doc.height());
                 let (x, y, px) = super::layer::rasterized(&doc, &id)?;
-                let alpha: Vec<u8> = px.read_rect(Rect::new(-x, -y, w, h)).chunks_exact(4).map(|p| p[3]).collect();
+                let alpha: Vec<u8> = px.read_rect(Rect::new(-x, -y, w, h)).as_chunks::<4>().0.iter().map(|p| p[3]).collect();
                 Ok(Mask::from_vec(w, h, [0], &alpha))
             })
             .await
             .map_err(|e| e.to_string())??;
-            s.edit_at(rev, cx.label(), cx.source, |d| Ok(set(d, m, how)))
+            s.edit_at(doc_id,rev, cx.label(), cx.source, |d| Ok(set(d, m, how)))
         }
         "select.modify" => s.edit(cx.label(), cx.source, None, |d| {
             let Some(mut m) = d.selection.clone() else { return Err("Nothing is selected.".into()) };

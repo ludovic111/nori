@@ -119,10 +119,10 @@ fn story(xml: &str, colors: &HashMap<String, Color>) -> (String, Story) {
             Event::Start(e) | Event::Empty(e) => {
                 let name = e.name();
                 match name.as_ref() {
-                    b"Story" => id = attr(&e, "Self").unwrap_or_default(),
+                    b"Story" => id = attr(e, "Self").unwrap_or_default(),
                     b"ParagraphStyleRange" => {
                         if st.align.is_none() {
-                            st.align = attr(&e, "Justification").map(|j| match j.as_str() {
+                            st.align = attr(e, "Justification").map(|j| match j.as_str() {
                                 "CenterAlign" | "CenterJustified" => TextAlign::Center,
                                 "RightAlign" | "RightJustified" => TextAlign::Right,
                                 _ => TextAlign::Left,
@@ -131,9 +131,9 @@ fn story(xml: &str, colors: &HashMap<String, Color>) -> (String, Story) {
                     }
                     b"CharacterStyleRange" => {
                         let mut run = TextRun { start: st.text.len(), end: st.text.len(), ..Default::default() };
-                        run.size = attr(&e, "PointSize").and_then(|v| v.parse::<f32>().ok()).map(|v| v * K);
-                        run.color = attr(&e, "FillColor").and_then(|c| colors.get(&c).copied());
-                        if let Some(fs) = attr(&e, "FontStyle") {
+                        run.size = attr(e, "PointSize").and_then(|v| v.parse::<f32>().ok()).map(|v| v * K);
+                        run.color = attr(e, "FillColor").and_then(|c| colors.get(&c).copied());
+                        if let Some(fs) = attr(e, "FontStyle") {
                             let (w, it) = weight_of(&fs);
                             run.weight = Some(w);
                             run.italic = Some(it);
@@ -202,7 +202,8 @@ fn story(xml: &str, colors: &HashMap<String, Color>) -> (String, Story) {
 }
 
 /// An item's outline, in spread coordinates.
-fn path_of(e_xml: &[(Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>)], m: &M, closed: bool) -> SubPath {
+type PathPoint = (Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>);
+fn path_of(e_xml: &[PathPoint], m: &M, closed: bool) -> SubPath {
     let nodes = e_xml
         .iter()
         .map(|(a, l, r)| {
@@ -218,7 +219,7 @@ fn path_of(e_xml: &[(Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>)], m: &M, clos
 enum Item {
     Frame { id: String, story: String, next: Option<String>, bounds: [f32; 4] },
     Shape { name: String, subpaths: Vec<SubPath>, fill: Option<Color>, stroke: Option<(Color, f32)> },
-    Picture { path: String, bounds: [f32; 4] },
+    Picture { path: String, embedded: Option<String>, bounds: [f32; 4] },
 }
 
 impl Item {
@@ -261,10 +262,11 @@ fn spread(xml: &str, colors: &HashMap<String, Color>) -> (Vec<PageBox>, Vec<Item
         tag: String,
         m: M,
         attrs: HashMap<String, String>,
-        points: Vec<(Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>)>,
+        points: Vec<PathPoint>,
         open_path: bool,
         subpaths: Vec<SubPath>,
         link: Option<String>,
+        embedded: Option<String>,
     }
     let mut stack: Vec<Open> = vec![];
     let mut group: Vec<M> = vec![ID];
@@ -292,7 +294,7 @@ fn spread(xml: &str, colors: &HashMap<String, Color>) -> (Vec<PageBox>, Vec<Item
                         continue;
                     }
                     let attrs = e.attributes().flatten().map(|a| (String::from_utf8_lossy(a.key.as_ref()).into_owned(), a.unescape_value().map(|v| v.into_owned()).unwrap_or_default())).collect();
-                    stack.push(Open { tag: String::from_utf8_lossy(&name).into_owned(), m, attrs, points: vec![], open_path: false, subpaths: vec![], link: None });
+                    stack.push(Open { tag: String::from_utf8_lossy(&name).into_owned(), m, attrs, points: vec![], open_path: false, subpaths: vec![], link: None, embedded: None });
                     if empty {
                         // No geometry: nothing to draw.
                         stack.pop();
@@ -309,11 +311,10 @@ fn spread(xml: &str, colors: &HashMap<String, Color>) -> (Vec<PageBox>, Vec<Item
                             o.points.push((a, attr(e, "LeftDirection").map(|s| nums(&s)), attr(e, "RightDirection").map(|s| nums(&s))));
                         }
                     }
-                } else if name == b"Link" {
-                    if let Some(o) = stack.last_mut() {
+                } else if name == b"Link"
+                    && let Some(o) = stack.last_mut() {
                         o.link = attr(e, "LinkResourceURI");
                     }
-                }
             }
             Event::End(ref e) => {
                 let name = e.name().as_ref().to_vec();
@@ -340,8 +341,8 @@ fn spread(xml: &str, colors: &HashMap<String, Color>) -> (Vec<PageBox>, Vec<Item
                             bounds: b,
                         }),
                         _ => {
-                            if let Some(link) = &o.link {
-                                items.push(Item::Picture { path: link.clone(), bounds: b });
+                            if o.link.is_some() || o.embedded.is_some() {
+                                items.push(Item::Picture { path: o.link.clone().unwrap_or_else(|| "Embedded picture".into()), embedded: o.embedded, bounds: b });
                                 continue;
                             }
                             let fill = o.attrs.get("FillColor").and_then(|c| colors.get(c).copied()).filter(|c| c.a > 0.0);
@@ -354,6 +355,9 @@ fn spread(xml: &str, colors: &HashMap<String, Color>) -> (Vec<PageBox>, Vec<Item
                         }
                     }
                 }
+            }
+            Event::CData(data) => {
+                if let Some(o) = stack.last_mut() { o.embedded = Some(String::from_utf8_lossy(data.as_ref()).into_owned()); }
             }
             Event::Eof => break,
             _ => {}
@@ -472,12 +476,16 @@ pub fn read(bytes: &[u8], name: &str) -> Result<Document, String> {
                     let lid = doc.new_id();
                     Layer::new(lid, name, Content::Vector { shape })
                 }
-                Item::Picture { path, bounds: b } => {
+                Item::Picture { path, embedded, bounds: b } => {
                     let file = path.strip_prefix("file:").unwrap_or(&path).replace("%20", " ");
                     let (x, y) = local(b[0], b[1]);
                     let (w, h) = (((b[2] * K).round() as u32).max(1), ((b[3] * K).round() as u32).max(1));
                     let lid = doc.new_id();
-                    let picture = std::fs::read(&file).ok().and_then(|bytes| crate::decode_picture(&bytes).ok());
+                    let picture = if let Some(data) = embedded {
+                        use base64::Engine;
+                        let compact: String = data.chars().filter(|c| !c.is_whitespace()).collect();
+                        base64::engine::general_purpose::STANDARD.decode(compact).ok().and_then(|bytes| crate::decode_picture(&bytes).ok())
+                    } else { std::fs::read(&file).ok().and_then(|bytes| crate::decode_picture(&bytes).ok()) };
                     match picture {
                         Some((pw, ph, rgba)) => {
                             let px = nori_render::transform::resample_rgba(&rgba, pw, ph, w, h, nori_render::transform::Filter::Bicubic);
@@ -570,5 +578,115 @@ mod tests {
         // Page 2 has the second frame and the red box.
         assert!(d.pages[1].layers.iter().any(|l| matches!(&l.content, Content::Vector { shape } if matches!(shape.fill, Paint::Solid { color } if color == Color::rgb(1.0, 0.0, 0.0)))));
         assert_eq!(d.thread_of(&frames[0].id).len(), 2);
+    }
+}
+
+/// Interchange export: pages, editable text frames and simple vector paths; raster pictures
+/// are embedded in the package. Effects that cannot be represented are composited first.
+pub fn write(doc: &Document) -> Result<Vec<u8>, String> {
+    use std::io::Write;
+    use base64::Engine;
+    let k = 72.0 / doc.dpi.max(1.0);
+    let esc = |s: &str| quick_xml::escape::escape(s).into_owned();
+    let ns = "http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging";
+    let mut files: Vec<(String, String)> = vec![];
+    let mut colors: std::collections::BTreeMap<String, Color> = std::collections::BTreeMap::new();
+    let mut color = |c: Color| {
+        if c.a <= 0.0 { return "Swatch/None".to_string(); }
+        let [r,g,b,_] = c.to_u8(); let id = format!("Color/c{r:02x}{g:02x}{b:02x}"); colors.insert(id.clone(), c); id
+    };
+    fn path(points: &[[f32; 2]], k: f32) -> String {
+        let mut s = "<Properties><PathGeometry><GeometryPathType PathOpen=\"false\"><PathPointArray>".to_string();
+        for [x,y] in points { s.push_str(&format!("<PathPointType Anchor=\"{} {}\" LeftDirection=\"{} {}\" RightDirection=\"{} {}\"/>",x*k,y*k,x*k,y*k,x*k,y*k)); }
+        s + "</PathPointArray></GeometryPathType></PathGeometry></Properties>"
+    }
+    let mut stories = std::collections::BTreeSet::new();
+    let mut design = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document xmlns:idPkg=\"{ns}\" DOMVersion=\"8.0\" Self=\"d\" Name=\"{}\"><Layer Self=\"layer1\" Name=\"Artwork\" Visible=\"true\" Printable=\"true\"/><idPkg:Graphic src=\"Resources/Graphic.xml\"/><idPkg:Styles src=\"Resources/Styles.xml\"/><idPkg:Preferences src=\"Resources/Preferences.xml\"/>",esc(&doc.name));
+    for (pi, page) in doc.pages.iter().enumerate() {
+        let spread_file = format!("Spreads/Spread_s{pi}.xml");
+        design.push_str(&format!("<idPkg:Spread src=\"{spread_file}\"/>"));
+        let mut xml = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><idPkg:Spread xmlns:idPkg=\"{ns}\" DOMVersion=\"8.0\"><Spread Self=\"s{pi}\" PageCount=\"1\" BindingLocation=\"0\" AllowPageShuffle=\"false\"><Page Self=\"p{pi}\" Name=\"{}\" GeometricBounds=\"0 0 {} {}\" ItemTransform=\"1 0 0 1 0 0\" AppliedMaster=\"n\"/>", pi+1, page.height as f32*k, page.width as f32*k);
+        let (flat, mut layers) = crate::plan::split(doc,page);
+        if let Some((pixels,x,y)) = flat { layers.push(Layer::new(format!("flattened{pi}"),"Composited layers",Content::Raster { x,y,pixels })); }
+        for (li,l) in layers.iter().rev().enumerate() {
+            if !l.visible || l.opacity <= 0.0 { continue; }
+            let lid = format!("item{pi}_{li}");
+            let common = format!("Self=\"{lid}\" Name=\"{}\" ItemLayer=\"layer1\" ItemTransform=\"1 0 0 1 0 0\" StrokeColor=\"Swatch/None\"",esc(&l.name));
+            match &l.content {
+                Content::Text { text } if l.opacity >= 1.0 && l.blend == nori_core::BlendMode::Normal => {
+                    let ids = doc.thread_of(&l.id); let head = ids.first().cloned().unwrap_or(l.id.clone());
+                    let st = doc.layer(&head).and_then(|l| if let Content::Text { text }=&l.content {Some(text)} else {None}).unwrap_or(text);
+                    let story_id = format!("story{head}");
+                    let next = text.next.as_ref().map(|id| format!("frame{id}")).unwrap_or_else(|| "n".into());
+                    let prev = ids.iter().position(|id| id == &l.id).and_then(|i| i.checked_sub(1)).map(|i|format!("frame{}",ids[i])).unwrap_or_else(||"n".into());
+                    let rect = nori_render::text::measure(text); let [w,h] = text.frame.unwrap_or([rect.w as f32,rect.h as f32]);
+                    let geom=path(&[[text.x,text.y],[text.x+w,text.y],[text.x+w,text.y+h],[text.x,text.y+h]],k);
+                    xml.push_str(&format!("<TextFrame Self=\"frame{}\" Name=\"{}\" ParentStory=\"{story_id}\" PreviousTextFrame=\"{prev}\" NextTextFrame=\"{next}\" ItemLayer=\"layer1\" ItemTransform=\"1 0 0 1 0 0\" FillColor=\"Swatch/None\" StrokeColor=\"Swatch/None\">{geom}<TextFramePreference TextColumnCount=\"1\" TextColumnGutter=\"0\"/></TextFrame>",l.id,esc(&l.name)));
+                    if stories.insert(story_id.clone()) {
+                        let fname=format!("Stories/Story_{story_id}.xml"); design.push_str(&format!("<idPkg:Story src=\"{fname}\"/>"));
+                        let align = match st.align {TextAlign::Center=>"CenterAlign",TextAlign::Right=>"RightAlign",_=>"LeftAlign"};
+                        let mut story=format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><idPkg:Story xmlns:idPkg=\"{ns}\" DOMVersion=\"8.0\"><Story Self=\"{story_id}\"><StoryPreference StoryOrientation=\"Horizontal\"/><ParagraphStyleRange AppliedParagraphStyle=\"ParagraphStyle/$ID/NormalParagraphStyle\" Justification=\"{align}\">");
+                        let mut bounds=vec![0,st.text.len()]; for run in &st.runs {bounds.extend([run.start.min(st.text.len()),run.end.min(st.text.len())]);} bounds.sort();bounds.dedup();
+                        for pair in bounds.windows(2) { let (a,b)=(pair[0],pair[1]); let Some(words)=st.text.get(a..b) else {continue};
+                            let run=st.runs.iter().rev().find(|r|r.start<=a && r.end>=b);
+                            let font=run.and_then(|r|r.font.as_deref()).unwrap_or(&st.font);let size=run.and_then(|r|r.size).unwrap_or(st.size)*k;
+                            let weight=run.and_then(|r|r.weight).unwrap_or(st.weight);let italic=run.and_then(|r|r.italic).unwrap_or(st.italic);
+                            let style=match (weight>=600,italic) {(true,true)=>"Bold Italic",(true,false)=>"Bold",(false,true)=>"Italic",_=>"Regular"};
+                            let fill=color(run.and_then(|r|r.color).unwrap_or(st.color));
+                            let words=esc(words).replace('\n',"</Content><Br/><Content>");
+                            story.push_str(&format!("<CharacterStyleRange AppliedCharacterStyle=\"CharacterStyle/$ID/[No character style]\" PointSize=\"{size}\" FontStyle=\"{style}\" FillColor=\"{fill}\"><Properties><AppliedFont type=\"string\">{}</AppliedFont></Properties><Content>{words}</Content></CharacterStyleRange>",esc(font)));
+                        }
+                        story.push_str("</ParagraphStyleRange></Story></idPkg:Story>");files.push((fname,story));
+                    }
+                }
+                Content::Vector { shape } if matches!(shape.fill,Paint::Solid{..}|Paint::None) && shape.stroke.as_ref().is_none_or(|s|matches!(s.paint,Paint::Solid{..}|Paint::None)) && l.opacity>=1.0 && l.blend==nori_core::BlendMode::Normal => {
+                    let points=crate::svg::geometry_for_idml(&shape.transformed());
+                    let fill=color(if let Paint::Solid{color}=shape.fill {color}else{Color::TRANSPARENT});
+                    let stroke=color(shape.stroke.as_ref().and_then(|s| if let Paint::Solid{color}=s.paint {Some(color)}else{None}).unwrap_or(Color::TRANSPARENT));
+                    let weight=shape.stroke.as_ref().map_or(0.,|s|s.width)*k;
+                    xml.push_str(&format!("<Polygon {} FillColor=\"{fill}\" StrokeWeight=\"{weight}\">",common.replace("StrokeColor=\"Swatch/None\"",&format!("StrokeColor=\"{stroke}\""))));
+                    xml.push_str("<Properties><PathGeometry>");
+                    for sp in points {xml.push_str(&format!("<GeometryPathType PathOpen=\"{}\"><PathPointArray>",!sp.closed));for n in sp.nodes {let a=[n.x*k,n.y*k];let i=n.handle_in.unwrap_or([n.x,n.y]).map(|v|v*k);let o=n.handle_out.unwrap_or([n.x,n.y]).map(|v|v*k);xml.push_str(&format!("<PathPointType Anchor=\"{} {}\" LeftDirection=\"{} {}\" RightDirection=\"{} {}\"/>",a[0],a[1],i[0],i[1],o[0],o[1]));}xml.push_str("</PathPointArray></GeometryPathType>");}
+                    xml.push_str("</PathGeometry></Properties></Polygon>");
+                }
+                _ => {
+                    let (x,y,w,h,rgba) = crate::psd::layer_pixels(doc,page,l);
+                    let mut rgba=rgba;for p in rgba.as_chunks_mut::<4>().0 {p[3]=(p[3] as f32*l.opacity).round() as u8;}
+                    let mut png=Vec::new();use image::ImageEncoder;image::codecs::png::PngEncoder::new(&mut png).write_image(&rgba,w,h,image::ExtendedColorType::Rgba8).map_err(|e|e.to_string())?;
+                    let data=base64::engine::general_purpose::STANDARD.encode(png);
+                    let geom=path(&[[x as f32,y as f32],[(x as f32)+w as f32,y as f32],[(x as f32)+w as f32,(y as f32)+h as f32],[x as f32,(y as f32)+h as f32]],k);
+                    xml.push_str(&format!("<Rectangle {common} FillColor=\"Swatch/None\" ContentType=\"GraphicType\">{geom}<Image Self=\"image{lid}\" ImageTypeName=\"PNG\" ActualPpi=\"{} {}\" ItemTransform=\"{k} 0 0 {k} {} {}\"><Properties><GraphicBounds Left=\"0\" Top=\"0\" Right=\"{w}\" Bottom=\"{h}\"/><Contents><![CDATA[{data}]]></Contents></Properties></Image></Rectangle>",doc.dpi,doc.dpi,x as f32*k,y as f32*k));
+                }
+            }
+        }
+        xml.push_str("</Spread></idPkg:Spread>");files.push((spread_file,xml));
+    }
+    design.push_str("</Document>");files.push(("designmap.xml".into(),design));
+    let mut graphic=format!("<idPkg:Graphic xmlns:idPkg=\"{ns}\" DOMVersion=\"8.0\">");for (id,c) in colors {let [r,g,b,_]=c.to_u8();graphic.push_str(&format!("<Color Self=\"{id}\" Name=\"{}\" Model=\"Process\" Space=\"RGB\" ColorValue=\"{r} {g} {b}\"/>",id.trim_start_matches("Color/")));}graphic.push_str("</idPkg:Graphic>");files.push(("Resources/Graphic.xml".into(),graphic));
+    files.push(("Resources/Styles.xml".into(),format!("<idPkg:Styles xmlns:idPkg=\"{ns}\" DOMVersion=\"8.0\"><RootCharacterStyleGroup Self=\"rcg\"><CharacterStyle Self=\"CharacterStyle/$ID/[No character style]\" Name=\"$ID/[No character style]\"/></RootCharacterStyleGroup><RootParagraphStyleGroup Self=\"rpg\"><ParagraphStyle Self=\"ParagraphStyle/$ID/NormalParagraphStyle\" Name=\"$ID/NormalParagraphStyle\"/></RootParagraphStyleGroup></idPkg:Styles>")));
+    files.push(("Resources/Preferences.xml".into(),format!("<idPkg:Preferences xmlns:idPkg=\"{ns}\" DOMVersion=\"8.0\"><DocumentPreference FacingPages=\"false\" PagesPerDocument=\"{}\"/></idPkg:Preferences>",doc.pages.len())));
+    files.push(("META-INF/container.xml".into(),"<?xml version=\"1.0\"?><container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"designmap.xml\" media-type=\"text/xml\"/></rootfiles></container>".into()));
+    let mut zip=zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip.start_file("mimetype",zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored)).map_err(|e|e.to_string())?;
+    zip.write_all(b"application/vnd.adobe.indesign-idml-package").map_err(|e|e.to_string())?;
+    for (name,text) in files {zip.start_file(name,zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated)).map_err(|e|e.to_string())?;zip.write_all(text.as_bytes()).map_err(|e|e.to_string())?;}
+    zip.finish().map(|c|c.into_inner()).map_err(|e|e.to_string())
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::*;
+    #[test]
+    fn export_preserves_pages_text_and_embedded_pictures() {
+        let mut d=Document::empty("Interchange",300,300);d.dpi=300.;
+        let id=d.new_id();d.insert_above(Layer::new(id,"Title",Content::Text{text:TextLayer{text:"Hello & goodbye".into(),size:20.,x:20.,y:20.,..Default::default()}}),None);
+        let id=d.new_id();d.insert_above(Layer::new(id,"Photo",Content::Raster{x:40,y:60,pixels:Raster::solid(10,10,[255,0,0,255])}),None);
+        let bytes=write(&d).unwrap();
+        let mut zip=zip::ZipArchive::new(Cursor::new(&bytes)).unwrap();
+        assert_eq!(zip.by_index(0).unwrap().name(),"mimetype");
+        for i in 0..zip.len() {let mut file=zip.by_index(i).unwrap();if file.name().ends_with(".xml") {let mut text=String::new();file.read_to_string(&mut text).unwrap();let mut reader=quick_xml::Reader::from_str(&text);loop {match reader.read_event() {Ok(Event::Eof)=>break,Ok(_)=>{},Err(e)=>panic!("{}: {e}",file.name())}}}}
+        let back=read(&bytes,"Back").unwrap();assert_eq!(back.pages[0].width,300);
+        assert!(back.all().iter().any(|l|matches!(&l.content,Content::Text{text} if text.text=="Hello & goodbye")));
+        assert!(back.all().iter().any(|l|matches!(&l.content,Content::Raster{..})),"embedded image wasn't imported");
     }
 }

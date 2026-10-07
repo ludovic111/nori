@@ -16,6 +16,7 @@ use crate::ui::scrub::{Scrub, ScrubChange};
 use crate::ui::{Button, GlassExt, caps, group, icon};
 
 pub struct RightColumn {
+    curves: Entity<crate::views::curves::Curves>,
     store: Entity<Store>,
     /// Number fields of the properties, by `layer/setting`.
     scrubs: HashMap<String, (Entity<Scrub>, Subscription)>,
@@ -76,7 +77,7 @@ impl RightColumn {
                 }
             }),
         ];
-        let mut this = Self { store, scrubs: HashMap::new(), words, words_for: None, name: None, thumbs: HashMap::new(), thumb_job: None, garbage: vec![], show_history: true, _subs: subs };
+        let mut this = Self { curves: cx.new(crate::views::curves::Curves::new), store, scrubs: HashMap::new(), words, words_for: None, name: None, thumbs: HashMap::new(), thumb_job: None, garbage: vec![], show_history: true, _subs: subs };
         this.refresh_thumbs(cx);
         this
     }
@@ -149,6 +150,7 @@ impl RightColumn {
     }
 
     /// A number field for a layer setting, made once and kept.
+    #[allow(clippy::too_many_arguments)]
     fn scrub(&mut self, key: String, label: &str, value: f64, step: f64, dec: usize, unit: &str, min: f64, max: f64, cx: &mut Context<Self>, on: impl Fn(f64, &str, &mut App) + 'static) -> Entity<Scrub> {
         if !self.scrubs.contains_key(&key) {
             let e = cx.new(|_| Scrub::new(label.to_string(), step, dec).unit(unit.to_string()).range(min, max));
@@ -163,7 +165,7 @@ impl RightColumn {
 
     // ---- layers ----------------------------------------------------------------------------
 
-    fn layer_row(&mut self, d: &Document, l: &Layer, depth: usize, active: Option<&str>, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn layer_row(&mut self, _d: &Document, l: &Layer, depth: usize, active: Option<&str>, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let t = cx.theme().clone();
         let id = l.id.clone();
         let selected = active == Some(id.as_str());
@@ -270,7 +272,7 @@ impl RightColumn {
         let mut out = vec![row.into_any_element()];
         if let Content::Group { children, expanded: true } = &l.content {
             for c in children {
-                out.extend(self.layer_row(d, c, depth + 1, active, cx));
+                out.extend(self.layer_row(_d, c, depth + 1, active, cx));
             }
         }
         out
@@ -554,7 +556,8 @@ impl RightColumn {
                     _ => None,
                 });
                 let (i2, i3) = (id.clone(), id.clone());
-                let paint_cell = |label: &'static str, c: Option<nori_core::Color>, gradient: bool, on: Box<dyn Fn(gpui::Point<gpui::Pixels>, &mut App)>, cx: &App| {
+                type PaintCallback = Box<dyn Fn(gpui::Point<gpui::Pixels>, &mut App)>;
+                let paint_cell = |label: &'static str, c: Option<nori_core::Color>, gradient: bool, on: PaintCallback, cx: &App| {
                     let t = cx.theme();
                     div()
                         .flex()
@@ -623,6 +626,22 @@ impl RightColumn {
                 body.push(crate::ui::switch("pass-through", "Pass through (adjustments inside reach below)", pass, move |v, _, cx| cx.store().update(cx, |s, cx| s.run("layer.update", json!({ "layerId": i1, "blend": if v { "pass-through" } else { "normal" } }), cx)), cx).text_size(px(sz::SM)).into_any_element());
             }
         }
+        if l.smart_source.is_some() {
+            let (w,h)=l.raster().map(|(_,_,p)|(p.width(),p.height())).unwrap_or((1,1));
+            let i1=id.clone();let i2=id.clone();
+            let width=self.scrub(format!("{id}/smart-width"),"Width",w as f64,1.0,0,"px",1.0,30000.0,cx,move |v,_,cx|cx.store().update(cx,|s,cx|s.run("layer.resizeSmartObject",json!({"layerId":i1,"width":v as u32,"height":h}),cx)));
+            let height=self.scrub(format!("{id}/smart-height"),"Height",h as f64,1.0,0,"px",1.0,30000.0,cx,move |v,_,cx|cx.store().update(cx,|s,cx|s.run("layer.resizeSmartObject",json!({"layerId":i2,"width":w,"height":v as u32}),cx)));
+            body.push(div().text_size(px(sz::SM)).child("Smart object · embedded original").into_any_element());
+            body.push(div().flex().gap(px(6.)).child(width).child(height).into_any_element());
+            let i3=id.clone();let i4=id.clone();let i5=id.clone();
+            body.push(div().flex().flex_wrap().gap(px(6.))
+                .child(Button::new("smart-edit","Edit contents").small().on_click(move |_,_,cx|crate::app::edit_smart_source(i3.clone(),cx)))
+                .child(Button::new("smart-replace","Replace contents…").small().on_click(move |_,_,cx|crate::app::replace_smart_source(i4.clone(),cx)))
+                .child(Button::new("smart-rasterize","Rasterize").small().on_click(move |_,_,cx|cx.store().update(cx,|s,cx|s.run("layer.rasterize",json!({"layerId":i5}),cx)))).into_any_element());
+            body.push(div().text_size(px(sz::XS)).text_color(t.text_3).child("Save edits in the source tab, then use Replace contents to apply them.").into_any_element());
+        } else if !matches!(l.content,Content::Adjustment{..}) {
+            let lid=id.clone();body.push(Button::new("make-smart","Convert to smart object").small().on_click(move |_,_,cx|cx.store().update(cx,|s,cx|s.run("layer.makeSmartObject",json!({"layerId":lid}),cx))).into_any_element());
+        }
         let _ = window;
         Some((title, div().flex().flex_col().gap(px(10.)).children(body).into_any_element()))
     }
@@ -655,6 +674,7 @@ impl RightColumn {
             out.push(crate::ui::switch("colorize", "Colorize", *colorize, move |on, _, cx| cx.store().update(cx, |s, cx| s.run("layer.setAdjustment", json!({ "layerId": lid, "settings": { "colorize": on } }), cx)), cx).text_size(px(sz::SM)).into_any_element());
         }
         if let Adjustment::Curves { .. } = a {
+            out.push(self.curves.clone().into_any_element());
             // The common curves, one click each.
             let presets: [(&str, Value); 5] = [
                 ("Linear", json!([[0, 0], [255, 255]])),
@@ -823,7 +843,7 @@ fn color_entries(f: impl Fn(String) -> Box<dyn Fn(&mut Window, &mut App)> + 'sta
     let fg = cx.store().read(cx).colors.foreground.hex();
     let bg = cx.store().read(cx).colors.background.hex();
     let mut out = vec![];
-    for (name, hex) in [("Foreground", fg), ("Background", bg), ("Black".into(), "#000000".into()), ("White".into(), "#ffffff".into())].map(|(n, h): (&str, String)| (n.to_string(), h)) {
+    for (name, hex) in [("Foreground", fg), ("Background", bg), ("Black", "#000000".into()), ("White", "#ffffff".into())].map(|(n, h): (&str, String)| (n.to_string(), h)) {
         let act = f(hex.clone());
         out.push(MenuEntry::Item(MenuItem { label: format!("{name}  {hex}").into(), icon: Some("square"), logo: None, shortcut: None, danger: false, disabled: false, checked: false, action: std::rc::Rc::new(move |w, cx| act(w, cx)) }));
     }

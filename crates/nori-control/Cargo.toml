@@ -6,6 +6,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+flate2.workspace = true
+tar.workspace = true
+minisign-verify.workspace = true
 nori-core.workspace = true
 nori-render.workspace = true
 nori-io.workspace = true
@@ -32,4 +35,5 @@ url.workspace = true
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 
 [dev-dependencies]
+minisign.workspace = true
 tempfile.workspace = true

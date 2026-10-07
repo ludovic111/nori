@@ -226,8 +226,23 @@ fn story(doc: Option<&Document>, t: &TextLayer, page_no: usize) -> (String, Vec<
     (text, spans)
 }
 
+/// A shaped glyph with the exact font and position used on the canvas, for searchable PDF.
+#[derive(Clone)]
+pub struct PdfGlyph {
+    pub font: Arc<Vec<u8>>,
+    pub font_index: u32,
+    pub id: u16,
+    pub text: String,
+    pub size: f32,
+    pub x: f32,
+    pub y: f32,
+    pub advance: f32,
+    pub color: Color,
+}
+
 /// One frame's worth of glyphs: outline paths by colour, and where its words ended.
 struct Set {
+    glyphs: Vec<PdfGlyph>,
     paths: Vec<(Color, tiny_skia::Path)>,
     block: Rect,
     /// Byte offset in the story where the next frame continues (the story's length if all fit).
@@ -236,6 +251,10 @@ struct Set {
 
 /// Sets `text[from..]` (spans in story bytes) in a frame of `t`'s settings.
 fn set_frame(f: &mut Fonts, t: &TextLayer, text: &str, spans: &[Span], from: usize) -> Set {
+    set_frame_impl(f, t, text, spans, from, false)
+}
+
+fn set_frame_impl(f: &mut Fonts, t: &TextLayer, text: &str, spans: &[Span], from: usize, collect: bool) -> Set {
     let line_mult = t.line_height.clamp(0.5, 5.0);
     let base_size = t.size.clamp(1.0, 4000.0);
     let part = &text[from..];
@@ -299,6 +318,8 @@ fn set_frame(f: &mut Fonts, t: &TextLayer, text: &str, spans: &[Span], from: usi
     }
     let block_w = frame.map(|[w, _]| w).unwrap_or_else(|| lines.iter().map(|l| l.width).fold(1.0, f32::max));
     let block_h = frame.map(|[_, h]| h).unwrap_or_else(|| lines.last().map_or(base_size * line_mult, |l| l.top + l.height));
+    let mut glyphs = Vec::new();
+    let mut faces = HashMap::new();
     let mut by_color: Vec<(Color, PathBuilder)> = vec![];
     for line in &lines {
         let dx = match t.align {
@@ -309,6 +330,15 @@ fn set_frame(f: &mut Fonts, t: &TextLayer, text: &str, spans: &[Span], from: usi
         for g in &line.glyphs {
             let (key, _, _) = CacheKey::new(g.font_id, g.glyph_id, g.font_size, (0.0, 0.0), g.font_weight, g.cache_key_flags);
             let color = g.color_opt.map(|c| Color::from_u8([c.r(), c.g(), c.b(), c.a()])).unwrap_or(t.color);
+            if collect {
+                let face = faces.entry(g.font_id).or_insert_with(|| f.system.db().with_face_data(g.font_id, |data, index| (Arc::new(data.to_vec()), index)));
+                if let Some((font, font_index)) = face {
+                    let start = from + para_start[line.para] + g.start;
+                    let end = from + para_start[line.para] + g.end;
+                    glyphs.push(PdfGlyph { font: font.clone(), font_index: *font_index, id: g.glyph_id, text: text.get(start..end).unwrap_or("").to_string(), size: g.font_size,
+                        x: t.x + dx + g.x + g.font_size * g.x_offset, y: t.y + line.baseline - g.font_size * g.y_offset, advance: g.w, color });
+                }
+            }
             let Fonts { system, swash, .. } = &mut *f;
             if let Some(cmds) = swash.get_outline_commands(system, key) {
                 let i = match by_color.iter().position(|(c, _)| *c == color) {
@@ -324,7 +354,7 @@ fn set_frame(f: &mut Fonts, t: &TextLayer, text: &str, spans: &[Span], from: usi
     }
     let paths = by_color.into_iter().filter_map(|(c, pb)| pb.finish().map(|p| (c, p))).collect();
     let block = Rect::new(t.x.floor() as i32, t.y.floor() as i32, block_w.ceil() as u32 + 1, block_h.ceil().max(1.0) as u32 + 1);
-    Set { paths, block, end }
+    Set { glyphs, paths, block, end }
 }
 
 /// The box a text layer takes on its page (point text: its words; a frame: the frame).
@@ -356,7 +386,7 @@ fn paint_set(set: &Set, t: &TextLayer, overflow: bool) -> TextImage {
     let _ = t;
     // tiny-skia is premultiplied; layers are straight.
     let mut rgba = pm.take();
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         let a = px[3] as u32;
         if a > 0 && a < 255 {
             for c in &mut px[..3] {
@@ -403,7 +433,8 @@ pub fn render_thread_on(doc: &Document, id: &str, on: Option<usize>) -> Vec<(Str
     let pages: Vec<usize> = frames.iter().map(|(i, _)| page_number(doc, i, on)).collect();
     let styles = serde_json::to_string(&doc.styles.character).unwrap_or_default();
     let key = format!("{}|{:?}|{}|{}", serde_json::to_string(&frames).unwrap_or_default(), pages, doc.pages.len(), styles);
-    static CACHE: OnceLock<Mutex<HashMap<String, Vec<(String, Arc<TextImage>)>>>> = OnceLock::new();
+    type StoryImages = HashMap<String, Vec<(String, Arc<TextImage>)>>;
+    static CACHE: OnceLock<Mutex<StoryImages>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     if let Some(v) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
         return v.clone();
@@ -423,7 +454,7 @@ pub fn render_thread_on(doc: &Document, id: &str, on: Option<usize>) -> Vec<(Str
         while from < text.len() && text[from..].starts_with([' ', '\n']) {
             from += 1;
         }
-        let set = if from < text.len() { set_frame(&mut f, &t, &text, &spans, from) } else { Set { paths: vec![], block: Rect::default(), end: from } };
+        let set = if from < text.len() { set_frame(&mut f, &t, &text, &spans, from) } else { Set { glyphs: vec![], paths: vec![], block: Rect::default(), end: from } };
         let overflow = k + 1 == n && set.end < text.len();
         out.push((fid.clone(), Arc::new(paint_set(&set, &t, overflow))));
         from = set.end.max(from);
@@ -472,9 +503,40 @@ pub fn outlines_on(doc: &Document, id: &str, on: Option<usize>) -> Vec<(Color, t
         while from < text.len() && text[from..].starts_with([' ', '\n']) {
             from += 1;
         }
-        let set = if from < text.len() { set_frame(&mut f, &t, &text, &spans, from) } else { Set { paths: vec![], block: Rect::default(), end: from } };
+        let set = if from < text.len() { set_frame(&mut f, &t, &text, &spans, from) } else { Set { glyphs: vec![], paths: vec![], block: Rect::default(), end: from } };
         if fid == id {
             return set.paths;
+        }
+        from = set.end.max(from);
+    }
+    vec![]
+}
+
+/// Searchable glyphs for one frame, with thread flow and page tokens resolved.
+pub fn pdf_glyphs_on(doc: &Document, id: &str, on: Option<usize>) -> Vec<PdfGlyph> {
+    let ids = doc.thread_of(id);
+    let frames: Vec<(String, TextLayer)> = ids
+        .iter()
+        .filter_map(|i| match &doc.layer(i)?.content {
+            Content::Text { text } => Some((i.clone(), text.clone())),
+            _ => None,
+        })
+        .collect();
+    let Some((head_id, head)) = frames.first() else { return vec![] };
+    let (text, spans) = story(Some(doc), head, page_number(doc, head_id, on));
+    let mut from = 0;
+    let mut f = fonts();
+    for (fid, frame) in &frames {
+        let mut t = head.clone();
+        t.x = frame.x;
+        t.y = frame.y;
+        t.frame = frame.frame;
+        while from < text.len() && text[from..].starts_with([' ', '\n']) {
+            from += 1;
+        }
+        let set = if from < text.len() { set_frame_impl(&mut f, &t, &text, &spans, from, true) } else { Set { glyphs: vec![], paths: vec![], block: Rect::default(), end: from } };
+        if fid == id {
+            return set.glyphs;
         }
         from = set.end.max(from);
     }
@@ -491,9 +553,9 @@ mod tests {
         let t = TextLayer { text: "Hello".into(), size: 48.0, color: Color::rgb(1.0, 0.0, 0.0), x: 10.0, y: 20.0, ..Default::default() };
         let img = render(&t);
         assert!(img.rect.w > 60 && img.rect.h > 20, "{:?}", img.rect);
-        let inked = img.rgba.chunks_exact(4).filter(|p| p[3] > 128).count();
+        let inked = img.rgba.as_chunks::<4>().0.iter().filter(|p| p[3] > 128).count();
         assert!(inked > 200, "only {inked} pixels inked");
-        assert!(img.rgba.chunks_exact(4).filter(|p| p[3] > 0).all(|p| p[0] >= 250 && p[1] <= 5));
+        assert!(img.rgba.as_chunks::<4>().0.iter().filter(|p| p[3] > 0).all(|p| p[0] >= 250 && p[1] <= 5));
         let m = measure(&t);
         assert_eq!((m.x, m.y), (10, 20));
     }
@@ -512,8 +574,8 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].color, Color::rgb(1.0, 0.0, 0.0));
         let img = render(&t);
-        assert!(img.rgba.chunks_exact(4).any(|p| p[3] > 200 && p[0] > 200 && p[1] < 50));
-        assert!(img.rgba.chunks_exact(4).any(|p| p[3] > 200 && p[0] < 50));
+        assert!(img.rgba.as_chunks::<4>().0.iter().any(|p| p[3] > 200 && p[0] > 200 && p[1] < 50));
+        assert!(img.rgba.as_chunks::<4>().0.iter().any(|p| p[3] > 200 && p[0] < 50));
     }
 
     #[test]

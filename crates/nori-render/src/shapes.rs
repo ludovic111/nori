@@ -111,7 +111,7 @@ pub fn draw(shape: &Shape, scale: f32) -> TextImage {
         pm.stroke_path(&p, &paint, &stroke, to, None);
     }
     let mut rgba = pm.take();
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         let a = px[3] as u32;
         if a > 0 && a < 255 {
             for c in &mut px[..3] {

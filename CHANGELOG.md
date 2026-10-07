@@ -26,3 +26,13 @@ nori's first release, in beta: one app for pictures, drawings and pages, part of
   to write one. Two examples ship: Duotone and Halftone.
 - **lsuite.** Send a picture straight to kimchi's timeline; nori appears to the other lsuite
   apps in `~/.lsuite/apps`.
+
+### Release completion
+
+- Independent document tabs, protected unsaved closes and quits, identity-checked background edits, and save completion that only marks the saved revision clean.
+- Embedded smart objects with editable sources, replacement, lossless repeated resizing and explicit rasterizing.
+- Interactive RGB/channel curves and brush pressure size/flow controls, with native macOS tablet event input.
+- Layered PSD and IDML export, selectable PDF text, PDF/PDF-compatible AI import, bounded 8-bit GIMP XCF import.
+- Signed updater archives with verification, install progress, rollback and restart; notarized Mac release packaging.
+
+See README for beta format and tablet backend limitations.

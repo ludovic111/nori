@@ -399,8 +399,8 @@ impl CanvasView {
             self.store.update(cx, |s, cx| s.flash("The brush paints on pixel layers: pick one, or add one with Layer › New Layer.", cx));
             return false;
         }
-        if doc.layer(&id).is_some_and(|l| l.locked || !l.visible) {
-            self.store.update(cx, |s, cx| s.flash("That layer is locked or hidden.", cx));
+        if doc.layer(&id).is_some_and(|l| l.locked || !l.visible || l.smart_source.is_some()) {
+            self.store.update(cx, |s, cx| s.flash("That layer is locked, hidden, or a smart object. Edit its source or rasterize it first.", cx));
             return false;
         }
         // The same growth the command does, on a copy.
@@ -418,7 +418,7 @@ impl CanvasView {
 
     fn stroke_to(&mut self, p: (f32, f32), cx: &mut Context<Self>) {
         let Some(live) = &mut self.live else { return };
-        let pt = [p.0, p.1, 1.0];
+        let pt = [p.0, p.1, tablet_pressure().unwrap_or(1.0)];
         if live.points.last().is_some_and(|q| (q[0] - pt[0]).abs() < 0.25 && (q[1] - pt[1]).abs() < 0.25) {
             return;
         }
@@ -462,6 +462,8 @@ impl CanvasView {
             "opacity": b.opacity,
             "flow": b.flow,
             "spacing": b.spacing,
+            "pressureSize": b.pressure_size,
+            "pressureOpacity": b.pressure_opacity,
             "erase": live.erase,
             "tip": b.tip,
         });
@@ -836,7 +838,7 @@ impl CanvasView {
         let mut rgba = vec![0u8; (n * n * 4) as usize];
         for y in 0..n {
             for x in 0..n {
-                let v = if ((x / cell) + (y / cell)) % 2 == 0 { a } else { b };
+                let v = if ((x / cell) + (y / cell)).is_multiple_of(2) { a } else { b };
                 let o = ((y * n + x) * 4) as usize;
                 rgba[o..o + 4].copy_from_slice(&[v, v, v, 255]);
             }
@@ -1027,9 +1029,9 @@ fn downsample(parts: &[Option<Buf>; 4]) -> Vec<u8> {
                 }
                 let d = (((oy + y) * TILE + ox + x) * 4) as usize;
                 if acc[3] > 0 {
-                    out[d] = (acc[0] / acc[3]) as u8;
-                    out[d + 1] = (acc[1] / acc[3]) as u8;
-                    out[d + 2] = (acc[2] / acc[3]) as u8;
+                    out[d] = acc[0].checked_div(acc[3]).unwrap_or(0) as u8;
+                    out[d + 1] = acc[1].checked_div(acc[3]).unwrap_or(0) as u8;
+                    out[d + 2] = acc[2].checked_div(acc[3]).unwrap_or(0) as u8;
                     out[d + 3] = (acc[3] / 4) as u8;
                 }
             }
@@ -1041,7 +1043,7 @@ fn downsample(parts: &[Option<Buf>; 4]) -> Vec<u8> {
 /// Straight RGBA → a GPUI picture (BGRA).
 pub fn to_image(rgba: &[u8], w: u32, h: u32) -> Option<Arc<RenderImage>> {
     let mut bgra = rgba.to_vec();
-    for p in bgra.chunks_exact_mut(4) {
+    for p in bgra.as_chunks_mut::<4>().0 {
         p.swap(0, 2);
     }
     let buf = image::RgbaImage::from_raw(w, h, bgra)?;
@@ -1369,6 +1371,18 @@ impl CanvasView {
         self.zoom_about(z, c, cx);
     }
 }
+
+/// Read the current tablet event on the UI thread. Ordinary mouse pressure is ignored.
+#[cfg(target_os="macos")]
+fn tablet_pressure() -> Option<f32> {
+    use objc2_app_kit::{NSApplication, NSEventSubtype, NSEventType};
+    let mtm=objc2::MainThreadMarker::new()?;
+    let event=NSApplication::sharedApplication(mtm).currentEvent()?;
+    if event.subtype()!=NSEventSubtype::TabletPoint && event.r#type()!=NSEventType::TabletPoint { return None; }
+    Some(event.pressure().clamp(0.0,1.0))
+}
+#[cfg(not(target_os="macos"))]
+fn tablet_pressure() -> Option<f32> { None }
 
 #[cfg(test)]
 mod tests {

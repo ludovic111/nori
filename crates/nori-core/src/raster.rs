@@ -1,3 +1,4 @@
+#![allow(clippy::chunks_exact_to_as_chunks)] // Slice iterators preserve existing comparison and byte-decoding types.
 //! Pixels, stored in tiles shared between copies.
 //!
 //! A [`Raster`] is RGBA (8 bits a channel, straight alpha) and a [`Mask`] is one grey channel.
@@ -347,6 +348,7 @@ impl<const C: usize> Plane<C> {
     }
 
     /// The tile list, for parallel writers ([`Plane::set_tiles`] puts it back).
+    #[allow(clippy::type_complexity)] // Wire representation: dimensions, fill and shared tiles.
     pub fn into_tiles(self) -> (u32, u32, [u8; C], Vec<Option<Arc<Vec<u8>>>>) {
         (self.width, self.height, self.fill, self.tiles)
     }

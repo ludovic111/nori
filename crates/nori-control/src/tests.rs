@@ -191,3 +191,55 @@ fn every_spec_is_handled_and_named_well() {
         assert!(s.doc.ends_with('.') || s.doc.ends_with(')'), "{}: the doc ends with a full stop", s.name);
     }
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tabs_keep_independent_documents_history_and_refuse_unsaved_close() {
+    let (s, _dir) = session();
+    ok(&s, "doc.new", json!({ "width": 32, "height": 32 })).await;
+    let first = s.current_id().unwrap();
+    ok(&s, "doc.setInfo", json!({ "name": "First edited" })).await;
+    ok(&s, "doc.new", json!({ "width": 64, "height": 64 })).await;
+    let second = s.current_id().unwrap();
+    assert_eq!(s.tabs().len(), 2);
+    ok(&s, "doc.select", json!({ "id": first })).await;
+    assert_eq!(s.document().unwrap().name, "First edited");
+    assert!(call(&s, Source::Cli, "doc.close", json!({})).await.is_err());
+    ok(&s, "history.undo", json!({})).await;
+    assert_ne!(s.document().unwrap().name, "First edited");
+    ok(&s, "doc.select", json!({ "id": second })).await;
+    assert_eq!(s.document().unwrap().width(), 64);
+    ok(&s, "doc.close", json!({ "discard": true })).await;
+    assert_eq!(s.current_id(), Some(first));
+    assert_eq!(s.tabs().len(), 1);
+}
+
+#[tokio::test(flavor="multi_thread")]
+async fn smart_sources_survive_roundtrip_and_resizing_without_losing_original_pixels() {
+    let (s,dir)=session();
+    ok(&s,"doc.new",json!({"width":16,"height":16})).await;
+    ok(&s,"raster.stroke",json!({"points":[[1,1],[14,14]],"size":3,"color":"#ff0033"})).await;
+    let before=nori_render::flatten(&s.document().unwrap());
+    ok(&s,"layer.makeSmartObject",json!({})).await;
+    ok(&s,"layer.resizeSmartObject",json!({"width":4,"height":4})).await;
+    ok(&s,"layer.resizeSmartObject",json!({"width":16,"height":16})).await;
+    assert_eq!(before,nori_render::flatten(&s.document().unwrap()));
+    assert!(call(&s,Source::Cli,"raster.stroke",json!({"points":[[8,8]],"size":4})).await.is_err());
+    let path=dir.path().join("smart.nori");ok(&s,"doc.save",json!({"path":path})).await;
+    ok(&s,"doc.open",json!({"path":path})).await;
+    assert!(s.document().unwrap().all().iter().any(|l|l.smart_source.is_some()));
+    let source=dir.path().join("source.nori");ok(&s,"layer.extractSmartObject",json!({"path":source})).await;
+    assert_eq!(before,nori_render::flatten(&nori_core::file::open(&source).unwrap()));
+    assert!(call(&s,Source::Cli,"layer.extractSmartObject",json!({"path":source})).await.is_err());
+    ok(&s,"layer.replaceSmartObject",json!({"path":source})).await;
+    ok(&s,"layer.rasterize",json!({})).await;
+    assert!(s.document().unwrap().all().iter().all(|l|l.smart_source.is_none()));
+}
+
+#[tokio::test(flavor="multi_thread")]
+async fn background_edits_reject_a_different_tab_with_the_same_revision() {
+    let (s,_)=session();ok(&s,"doc.new",json!({"width":16,"height":16})).await;
+    let (_,rev,id)=s.snapshot().unwrap();
+    ok(&s,"doc.new",json!({"width":16,"height":16})).await;
+    assert!(s.edit_at(id,rev,"old render",Source::Cli,|d|{d.name="WRONG".into();Ok(())}).is_err());
+    assert_ne!(s.document().unwrap().name,"WRONG");
+}

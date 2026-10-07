@@ -9,3 +9,5 @@ pub mod onboarding;
 pub mod overlays;
 pub mod panels;
 pub mod tools;
+
+pub mod curves;

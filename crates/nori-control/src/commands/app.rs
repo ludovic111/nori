@@ -42,7 +42,9 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             }
             Ok(json!({ "key": key, "value": settings.get(&key) }))
         }
-        "app.checkUpdates" => crate::update::check().await,
+        "app.checkUpdates" => Ok(json!(crate::update::check(s, true).await?)),
+        "app.installUpdate" => Ok(json!(crate::update::install(s).await?)),
+        "app.updateStatus" => Ok(json!(crate::update::status(s))),
         "app.whatsNew" => {
             let all = a.bool_or("all", false);
             let releases = if all { crate::release_notes::all() } else { crate::release_notes::find(crate::update::CURRENT).into_iter().collect() };

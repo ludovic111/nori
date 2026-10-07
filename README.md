@@ -21,12 +21,13 @@ Free and open source (MIT), written in Rust, in beta.
   operations (unite, subtract, intersect, exclude). SVG in and out.
 - **Pages.** Several pages or artboards in one document, master pages, margins, columns and
   guides; text frames whose words flow from frame to frame across pages; paragraph and character
-  styles; page numbers; PDF export with every page, shapes and text kept as vectors.
+  styles; page numbers; PDF export with every page, vector shapes and selectable embedded text.
 - **Coming from another editor.** Photoshop documents open with their layers (also what
-  Affinity Photo, Pixelmator Pro and Photopea save); OpenRaster from Krita and GIMP; SVG from
+  Affinity Photo, Pixelmator Pro and Photopea save); layered PSD export; OpenRaster from Krita and GIMP; 8-bit RGB/gray GIMP XCF (versions 0–13); PDF and PDF-compatible Illustrator files; IDML in and out; SVG from
   Illustrator, Inkscape, Figma, Affinity Designer, Canva and Scribus. Adobe swatches (`.ase`) and
   GIMP brushes (`.gbr`) import too.
-- **Your agent.** The Agent panel (⌘J) runs **lsuite AI** (sign in, nothing to set up) or your own
+- **Documents and originals.** Multiple tabs retain their own undo histories. Embedded smart objects preserve editable native sources; repeated resizing samples the original. RGB/channel curves have a draggable graph.
+- **Your agent.** The Agent panel (⌘J) runs **lsuite AI** (currently a clearly marked demo until provider accounts are configured) or your own
   Claude Code, Codex, Anthropic or OpenAI key, or a model on Ollama. It works through the same
   commands as the window; each change is a step you can undo, and a run can be reverted at once.
   `nori-mcp` gives every command to any MCP client; `nori-cli` to scripts. See
@@ -60,3 +61,17 @@ nori is free. If it helps you, [support it](https://lsuite.xyz/nori/support).
 Licence: MIT. Fonts: Chakra Petch, Manrope and IBM Plex Mono (SIL OFL). Icons: Lucide (ISC).
 The logos in `crates/nori-desktop/assets/logos` belong to their owners
 ([sources](crates/nori-desktop/assets/logos/SOURCES.md)).
+
+## Beta interoperability and pressure
+
+PSD export retains raster layers, names, opacity and supported blending; text, vector and effect layers use rendered fallbacks. IDML export retains simple text frames, threading, paths and embedded pictures; complex effects are rasterized. These round trips are covered by automated tests, but have not yet been opened in Photoshop or InDesign. PDF import converts text to outlines; PDF export keeps ordinary text selectable. Illustrator import requires PDF compatibility; private Illustrator editing data and legacy PostScript AI are unsupported.
+
+XCF import supports 8-bit nonlinear RGB/grayscale, groups, masks and raw/RLE/zlib tiles through version 13. Unsupported precision, indexed color, blend modes and newer versions return an explicit error; export OpenRaster from GIMP for those documents.
+
+Pressure size and flow controls are in the brush toolbar. macOS reads tablet pressure from the current native tablet event; actual tablet hardware still needs verification. Linux and Windows currently use full mouse pressure in the canvas because the pinned GUI backend does not expose tablet samples. The command API accepts pressure samples on every platform.
+
+Smart objects have **Edit contents**, **Replace contents**, width/height and **Rasterize** controls. Save the source tab and replace the contents to apply edits. Rotation/flipping and destructive pixel filters require rasterizing first; resizing and replacement retain the embedded original. Signed app updates are available in Settings → Updates, with checksums and signatures verified before installation.
+
+## Release builds
+
+The suite workflow in `ludovic111/kimchi/.github/workflows/suite-build.yml` builds an exact nori commit for macOS ARM/Intel, Windows and Linux using the existing suite Apple signing account and nori’s separate update key. Upload all verified assets, `SHA256SUMS`, and the signed-asset `latest.json` to the nori release. The repository’s standalone release workflow is manual and refuses unsigned releases when credentials are missing.

@@ -524,6 +524,9 @@ impl Content {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Layer {
+    /// Embedded native source, base64 encoded; cached pixels are disposable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smart_source: Option<std::sync::Arc<String>>,
     pub id: String,
     pub name: String,
     #[serde(default = "yes")]
@@ -546,7 +549,7 @@ pub struct Layer {
 
 impl Layer {
     pub fn new(id: impl Into<String>, name: impl Into<String>, content: Content) -> Self {
-        Self { id: id.into(), name: name.into(), visible: true, locked: false, opacity: 1.0, blend: BlendMode::Normal, mask: None, clipped: false, content }
+        Self { smart_source: None, id: id.into(), name: name.into(), visible: true, locked: false, opacity: 1.0, blend: BlendMode::Normal, mask: None, clipped: false, content }
     }
 
     pub fn is_group(&self) -> bool {
