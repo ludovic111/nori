@@ -27,7 +27,7 @@ Free and open source (MIT), written in Rust, in beta.
   Illustrator, Inkscape, Figma, Affinity Designer, Canva and Scribus. Adobe swatches (`.ase`) and
   GIMP brushes (`.gbr`) import too.
 - **Documents and originals.** Multiple tabs retain their own undo histories. Embedded smart objects preserve editable native sources; repeated resizing samples the original. RGB/channel curves have a draggable graph.
-- **Your agent.** The Agent panel (⌘J) runs **lsuite AI** (currently a clearly marked demo until provider accounts are configured) or your own
+- **Your agent.** The Agent panel (⌘J) runs **lsuite AI** (a demo for now: no payment is taken) or your own
   Claude Code, Codex, Anthropic or OpenAI key, or a model on Ollama. It works through the same
   commands as the window; each change is a step you can undo, and a run can be reverted at once.
   `nori-mcp` gives every command to any MCP client; `nori-cli` to scripts. See
@@ -58,7 +58,7 @@ Linux needs GPUI's usual libraries (see `.github/workflows/ci.yml`).
 
 nori is free. If it helps you, [support it](https://lsuite.xyz/nori/support).
 
-Licence: MIT. Fonts: Chakra Petch, Manrope and IBM Plex Mono (SIL OFL). Icons: Lucide (ISC).
+License: MIT. Fonts: Chakra Petch, Manrope and IBM Plex Mono (SIL OFL). Icons: Lucide (ISC).
 The logos in `crates/nori-desktop/assets/logos` belong to their owners
 ([sources](crates/nori-desktop/assets/logos/SOURCES.md)).
 
