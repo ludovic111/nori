@@ -29,6 +29,18 @@ pub struct RightColumn {
     _subs: Vec<Subscription>,
 }
 
+/// A cheap signature of a page's look: its size, its layers' and its master's.
+fn page_signature(doc: &Document, p: &nori_core::Page) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    (p.width, p.height, &p.master, doc.pages.len()).hash(&mut h);
+    let [paper, master, own] = doc.page_stack(p);
+    for l in paper.iter().chain(master).chain(own).flat_map(|l| l.walk()) {
+        signature(l).hash(&mut h);
+    }
+    h.finish()
+}
+
 /// A cheap signature of a layer's look (settings and pixel tiles).
 fn signature(l: &Layer) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -69,7 +81,8 @@ impl RightColumn {
         this
     }
 
-    /// Pixel layers show a small picture of themselves, made in the background.
+    /// Pixel layers show a small picture of themselves, and pages (in a document of several, or
+    /// with master pages) a small picture of the page, made in the background.
     fn refresh_thumbs(&mut self, cx: &mut Context<Self>) {
         let Some(doc) = self.store.read(cx).doc.clone() else { return };
         let mut todo = vec![];
@@ -81,18 +94,43 @@ impl RightColumn {
                 }
             }
         }
-        if todo.is_empty() || self.thumb_job.is_some() {
+        let mut pages = vec![];
+        if doc.pages.len() > 1 || !doc.masters.is_empty() {
+            // Pages by index, then masters after them.
+            for (i, p) in doc.pages.iter().chain(doc.masters.iter()).enumerate() {
+                let sig = page_signature(&doc, p);
+                if self.thumbs.get(&format!("page:{}", p.id)).is_none_or(|(s, _)| *s != sig) {
+                    pages.push((i, p.id.clone(), sig));
+                }
+            }
+        }
+        if (todo.is_empty() && pages.is_empty()) || self.thumb_job.is_some() {
             return;
         }
         let task = cx.background_spawn(async move {
             // Waits a moment: a stroke or a drag changes the layer many times.
             std::thread::sleep(std::time::Duration::from_millis(250));
-            todo.into_iter()
+            let mut out: Vec<(String, u64, Arc<RenderImage>)> = todo
+                .into_iter()
                 .filter_map(|(id, sig)| {
                     let (w, h, rgba) = nori_render::composite::layer_image(&doc, &id, 64)?;
                     Some((id, sig, crate::views::canvas::to_image(&rgba, w, h)?))
                 })
-                .collect::<Vec<_>>()
+                .collect();
+            if !pages.is_empty() {
+                // Every page at once: the document scaled down (pixels resampled once), each
+                // page drawn small.
+                let side = doc.pages.iter().map(|p| p.width.max(p.height)).max().unwrap_or(1) as f32;
+                let small = nori_render::transform::scale_document(&doc, (96.0 / side).min(1.0), nori_render::transform::Filter::Bilinear);
+                for (i, id, sig) in pages {
+                    let Some(p) = small.pages.get(i).or_else(|| small.masters.get(i - small.pages.len())) else { continue };
+                    let rgba = nori_render::flatten_page(&small, p);
+                    if let Some(img) = crate::views::canvas::to_image(&rgba, p.width, p.height) {
+                        out.push((format!("page:{id}"), sig, img));
+                    }
+                }
+            }
+            out
         });
         self.thumb_job = Some(cx.spawn(async move |this, cx| {
             let out = task.await;
@@ -349,6 +387,7 @@ impl RightColumn {
     fn pages(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let t = cx.theme().clone();
         let Some(doc) = self.store.read(cx).doc.clone() else { return div().into_any_element() };
+        let thumbs: HashMap<String, Arc<RenderImage>> = doc.pages.iter().chain(doc.masters.iter()).filter_map(|p| Some((p.id.clone(), self.thumbs.get(&format!("page:{}", p.id))?.1.clone()))).collect();
         let row = |p: &nori_core::Page, label: String, active: bool, master: bool, _cx: &mut Context<Self>| {
             let pid = p.id.clone();
             let mid = p.id.clone();
@@ -370,7 +409,16 @@ impl RightColumn {
                     // The page's shape, at its proportions.
                     let (w, h) = (p.width as f32, p.height as f32);
                     let k = 26.0 / w.max(h);
-                    div().flex_none().w(px(30.)).flex().justify_center().child(div().w(px(w * k)).h(px(h * k)).border_1().border_color(if active { t.text_on_accent } else { t.line_strong }).bg(if active { t.text_on_accent.opacity(0.15) } else { t.bg_raised }))
+                    let thumb = thumbs.get(&p.id).cloned();
+                    div().flex_none().w(px(30.)).flex().justify_center().child(
+                        div()
+                            .w(px(w * k))
+                            .h(px(h * k))
+                            .border_1()
+                            .border_color(if active { t.text_on_accent } else { t.line_strong })
+                            .bg(if active { t.text_on_accent.opacity(0.15) } else { t.bg_raised })
+                            .when_some(thumb, |d, i| d.child(img(i).size_full().object_fit(gpui::ObjectFit::Fill))),
+                    )
                 })
                 .child(div().flex_1().min_w_0().flex().flex_col().child(div().truncate().text_size(px(sz::SM)).font_weight(FontWeight::MEDIUM).child(label)).child(div().font_family(MONO).text_size(px(10.)).opacity(0.7).child(format!("{}×{}{}", p.width, p.height, p.master.as_ref().and_then(|m| doc.masters.iter().find(|x| &x.id == m)).map(|m| format!(" · {}", m.name)).unwrap_or_default()))))
                 .into_any_element()
