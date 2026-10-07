@@ -9,6 +9,7 @@
 //! * [`APPS`]: the editors people come from, and which of their files nori really opens.
 
 pub mod assets;
+pub mod idml;
 pub mod ora;
 pub mod pdf;
 pub mod plan;
@@ -43,6 +44,7 @@ pub static FORMATS: &[Format] = &[
     Format { id: "gif", name: "GIF", extensions: &["gif"], open: true, export: false, keeps: "pixels (first frame)" },
     Format { id: "psd", name: "Photoshop document", extensions: &["psd"], open: true, export: false, keeps: "layers (pixels, positions, opacity, blend modes, groups, clipping); text and smart objects as their pixels" },
     Format { id: "ora", name: "OpenRaster", extensions: &["ora"], open: true, export: true, keeps: "layers (pixels, positions, opacity, blend modes, groups)" },
+    Format { id: "idml", name: "InDesign Markup", extensions: &["idml"], open: true, export: false, keeps: "pages, text frames and their threads, character settings, shapes, fills and strokes, placed pictures found on disk" },
     Format { id: "svg", name: "SVG", extensions: &["svg", "svgz"], open: true, export: true, keeps: "vectors (paths, fills, strokes, gradients, groups); text as outlines" },
     Format { id: "pdf", name: "PDF", extensions: &["pdf"], open: false, export: true, keeps: "every page: vectors, text as outlines, pixels as images" },
 ];
@@ -85,7 +87,8 @@ pub static APPS: &[App] = &[
     App { id: "figma", name: "Figma", maker: "Figma", kind: "vector", formats: &["svg"], how: "In Figma, select a frame, Export › SVG, then open it here as vector layers." },
     App { id: "affinitydesigner", name: "Affinity Designer", maker: "Serif (Canva)", kind: "vector", formats: &["svg", "psd"], how: "In Affinity Designer, File › Export › SVG, then open it here as vector layers." },
     App { id: "canva", name: "Canva", maker: "Canva", kind: "layout", formats: &["svg"], how: "In Canva, Share › Download › SVG, then open it here as vector layers." },
-    App { id: "affinitypublisher", name: "Affinity Publisher", maker: "Serif (Canva)", kind: "layout", formats: &["svg"], how: "In Affinity Publisher, File › Export › SVG (one page at a time), then open it here or place it on a page." },
+    App { id: "indesign", name: "InDesign", maker: "Adobe", kind: "layout", formats: &["idml"], how: "In InDesign, File › Save a Copy… InDesign Markup (IDML), then open it here: pages, text frames and their threads, shapes and pictures come with it." },
+    App { id: "affinitypublisher", name: "Affinity Publisher", maker: "Serif (Canva)", kind: "layout", formats: &["idml", "svg"], how: "In Affinity Publisher, File › Export › IDML, then open it here with its pages and text frames." },
     App { id: "scribus", name: "Scribus", maker: "The Scribus team", kind: "layout", formats: &["svg"], how: "In Scribus, File › Export › Save as SVG, then open it here or place it on a page." },
 ];
 
@@ -167,6 +170,7 @@ pub fn open(path: &Path) -> Result<Document, String> {
         "psd" => psd::read(&bytes, &name),
         "ora" => ora::read(&bytes, &name),
         "svg" => svg::read(&bytes, &name),
+        "idml" => idml::read(&bytes, &name),
         "pdf" => Err("nori writes PDF but doesn't open it yet.".to_string()),
         _ => {
             // Sniff: a nori file (zip with document.json), else a picture.

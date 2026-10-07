@@ -421,6 +421,7 @@ impl Dialogs {
         let problems: Vec<AnyElement> = p["problems"].as_array().into_iter().flatten().map(|x| div().flex().gap(px(6.)).text_size(px(sz::SM)).text_color(t.danger).child(icon("circle-alert")).child(format!("{}: {}", x["path"].as_str().unwrap_or(""), x["error"].as_str().unwrap_or(""))).into_any_element()).collect();
         let formats: Vec<AnyElement> = p["formats"].as_array().into_iter().flatten().map(|f| {
             let logo_id: &'static str = match f["logo"].as_str().unwrap_or("") {
+                "resolve" => "resolve",
                 "photoshop" => "photoshop",
                 "gimp" => "gimp",
                 _ => "lsuite",

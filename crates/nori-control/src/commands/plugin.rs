@@ -234,7 +234,7 @@ pub fn list(s: &Session) -> Value {
         .collect();
     let formats = json!([
         { "id": "lsuite", "name": "lsuite plugins (nori SDK)", "loads": "filters", "where": plugins_dir().display().to_string(), "logo": "lsuite" },
-        { "id": "cube", "name": ".cube colour lookup tables", "loads": "Color Lookup adjustment layers (layer.addLut)", "where": "any file", "makers": ["Adobe", "Blackmagic Design"], "logo": "photoshop" },
+        { "id": "cube", "name": ".cube colour lookup tables", "loads": "Color Lookup adjustment layers (layer.addLut)", "where": "any file", "makers": ["Blackmagic Design", "Adobe"], "logo": "resolve" },
         { "id": "gbr", "name": ".gbr brushes", "loads": "brush tips (brushes.import)", "where": s.data_dir.join("brushes").display().to_string(), "makers": ["GIMP", "Krita"], "logo": "gimp" },
         { "id": "ase", "name": ".ase swatches", "loads": "swatches (color.importSwatches)", "where": "any file", "makers": ["Adobe", "Affinity"], "logo": "photoshop" },
     ]);

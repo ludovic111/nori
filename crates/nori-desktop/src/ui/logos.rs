@@ -46,10 +46,13 @@ pub const LOGOS: &[(&str, Option<LogoFile>)] = &[
     ("figma", one("figma")),
     ("affinitydesigner", one("affinitydesigner")),
     ("canva", one("canva")),
+    ("indesign", one("indesign")),
     ("affinitypublisher", one("affinitypublisher")),
     ("scribus", one("scribus")),
     // Tools and formats.
     ("rust", themed("rust")),
+    // .cube LUTs (DaVinci Resolve makes them; Photoshop and Premiere read them).
+    ("resolve", one("resolve")),
     // lsuite.
     ("kimchi", one("kimchi")),
     ("ryolune", one("ryolune")),

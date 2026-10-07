@@ -14,9 +14,8 @@ nearly, gets a `-dark` copy in white (or with its colours inverted) for the dark
 | File | Used for | Downloaded from |
 | --- | --- | --- |
 | `photoshop.png` | Adobe Photoshop (PSD in, its keys) | https://commons.wikimedia.org/wiki/File:Adobe_Photoshop_CC_icon.svg (Adobe's app icon; public domain on Commons) |
+| `indesign.png` | Adobe InDesign (IDML) | https://commons.wikimedia.org/wiki/File:Adobe_InDesign_CC_icon.svg (public domain on Commons) |
 | `illustrator.png` | Adobe Illustrator (AI/PDF and SVG in, its keys) | https://commons.wikimedia.org/wiki/File:Adobe_Illustrator_CC_icon.svg (public domain on Commons) |
-| `indesign.png` | Adobe InDesign (not shown yet) | https://commons.wikimedia.org/wiki/File:Adobe_InDesign_CC_icon.svg (public domain on Commons) |
-| `adobe.png` | Adobe (Adobe formats in general) | Simple Icons 11.15.0, `icons/adobe.svg` (simple-icons@11.15.0 on npm; removed in later versions), in its colour #FF0000 |
 | `gimp.png` | GIMP (XCF, `.gbr` brushes, its keys) | https://commons.wikimedia.org/wiki/File:The_GIMP_icon_-_gnome.svg (Wilber, by Tuomas Kuosmanen; GPL) |
 | `krita.png` | Krita (KRA/ORA, brushes, its keys) | https://commons.wikimedia.org/wiki/File:Krita_Application_Logo.svg (KOffice Team; CC BY 2.5) |
 | `inkscape.png` | Inkscape (SVG, its keys) | https://commons.wikimedia.org/wiki/File:Inkscape_Logo.svg (Andrew Michael Fitzsimon; CC BY-SA 3.0) |
