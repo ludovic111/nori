@@ -136,14 +136,15 @@ fn esc(s: &str) -> String {
     s.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-/// Writes the active page as OpenRaster: raster layers as they are; text, vectors, fills and
-/// adjustment layers as pixels (other apps don't share nori's), groups as stacks.
+/// Writes the active page as OpenRaster: raster layers as they are; text, vectors and fills as
+/// pixels (other apps don't share nori's); an adjustment as the pixels it makes of the layers under
+/// it in its stack (so the picture looks the same); groups as stacks.
 pub fn write(doc: &Document) -> Result<Vec<u8>, String> {
     let page = doc.page();
     let mut files: Vec<(String, Vec<u8>)> = vec![];
     let mut xml = format!("<?xml version='1.0' encoding='UTF-8'?>\n<image version=\"0.0.5\" w=\"{}\" h=\"{}\" xres=\"{}\" yres=\"{}\">\n<stack>\n", page.width, page.height, doc.dpi, doc.dpi);
     fn walk(doc: &nori_core::Document, list: &[Layer], xml: &mut String, files: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-        for l in list {
+        for (i, l) in list.iter().enumerate() {
             let vis = if l.visible { "visible" } else { "hidden" };
             match &l.content {
                 Content::Group { children, .. } => {
@@ -165,7 +166,13 @@ pub fn write(doc: &Document) -> Result<Vec<u8>, String> {
                     solo.blend = BlendMode::Normal;
                     let mut p = doc.page().clone();
                     p.master = None;
-                    p.layers = vec![solo];
+                    p.layers = if matches!(l.content, Content::Adjustment { .. }) {
+                        // An adjustment on its own changes nothing: it goes as what it makes of
+                        // the layers under it (in its stack), laid over them at its opacity.
+                        std::iter::once(solo).chain(list[i + 1..].iter().cloned()).collect()
+                    } else {
+                        vec![solo]
+                    };
                     let rgba = nori_render::flatten_page(doc, &p);
                     let src = format!("data/{}.png", l.id);
                     files.push((src.clone(), nori_core::file::encode_png_rgba(p.width, p.height, &rgba)?));
@@ -227,5 +234,18 @@ mod tests {
         assert_eq!(dot.raster().unwrap().2.get(1, 1), [255, 0, 0, 255]);
         assert_eq!(dot.raster_bounds().unwrap().x, 3);
         assert_eq!(layers[1].name, "Background");
+    }
+
+    #[test]
+    fn adjustments_go_as_what_they_make() {
+        let mut d = Document::new("t", 8, 8, Some(Color::WHITE));
+        let id = d.new_id();
+        let adj = nori_core::layer::Adjustment::default_of("invert").unwrap();
+        d.insert_above(Layer::new(id, "Invert", Content::Adjustment { adjustment: adj }), None);
+        let before = nori_render::flatten(&d);
+        let back = read(&write(&d).unwrap(), "t").unwrap();
+        let after = nori_render::flatten(&back);
+        assert_eq!(&before[..4], &[0, 0, 0, 255]);
+        assert_eq!(before, after);
     }
 }
