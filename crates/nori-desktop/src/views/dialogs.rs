@@ -119,7 +119,7 @@ impl Dialogs {
                 .child(div().flex().gap(px(8.)).child(div().flex_1().child(self.new_dpi.clone())).child(div().flex_1().child(self.new_pages.clone())))
                 .child(field(
                     "Background",
-                    crate::ui::segmented("new-bg", vec![("white", "White".into()), ("transparent", "Transparent".into()), ("black", "Black".into())], bg, move |v, _, cx| e1.update(cx, |d, cx| { d.new_bg = v; cx.notify(); }), cx).into_any_element(),
+                    crate::ui::segmented("new-bg", vec![("white", "White".into()), ("transparent", "Transparent".into()), ("black", "Black".into())], bg, move |v, _, cx| e1.update(cx, |d, cx| { d.new_bg = *v; cx.notify(); }), cx).into_any_element(),
                     cx,
                 ))
                 .child(div().text_size(px(sz::SM)).text_color(t.text_2).child("Several pages make a layout (master pages, text that flows from page to page); 300 dpi is for print."))
@@ -178,7 +178,7 @@ impl Dialogs {
                 .flex()
                 .flex_col()
                 .gap(px(14.))
-                .child(field("Format", crate::ui::segmented("export-format", formats, fmt, move |v, _, cx| e1.update(cx, |d, cx| { d.export_format = v; cx.notify(); }), cx).into_any_element(), cx))
+                .child(field("Format", crate::ui::segmented("export-format", formats, fmt, move |v, _, cx| e1.update(cx, |d, cx| { d.export_format = *v; cx.notify(); }), cx).into_any_element(), cx))
                 .when(picture, |d| {
                     d.child(field(
                         "Size",

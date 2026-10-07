@@ -281,7 +281,7 @@ impl Render for OptionsBar {
             }
             Tool::Select | Tool::EllipseSelect | Tool::Lasso | Tool::Wand => {
                 let opts: Vec<(&'static str, gpui::SharedString)> = vec![("replace", "New".into()), ("add", "Add".into()), ("subtract", "Subtract".into()), ("intersect", "Intersect".into())];
-                row.push(crate::ui::segmented("combine", opts, combine, |v, _, cx| cx.store().update(cx, |s, cx| { s.combine = v; cx.notify(); }), cx).w(px(260.)).into_any_element());
+                row.push(crate::ui::segmented("combine", opts, combine, |v, _, cx| cx.store().update(cx, |s, cx| { s.combine = *v; cx.notify(); }), cx).w(px(260.)).into_any_element());
                 if tool == Tool::Wand {
                     row.push(self.tolerance.clone().into_any_element());
                     row.push(setting_switch("contiguous", "Contiguous", "tools.contiguous", tools.contiguous, cx));
