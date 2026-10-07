@@ -83,7 +83,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             set_style(&mut t, &a)?;
             let base: String = t.text.lines().next().unwrap_or("Text").chars().take(24).collect();
             let base = if base.trim().is_empty() { "Text".to_string() } else { base };
-            let r = super::layer::add(d, &a, Content::Text { text: t }, &base)?;
+            let mut r = super::layer::add(d, &a, Content::Text { text: t }, &base)?;
             // A layer named after its words needs no number.
             if a.opt_str("name").is_none()
                 && let Some(id) = r["layerId"].as_str()
@@ -91,6 +91,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
                 && let Some(l) = d.layer_mut(id)
             {
                 l.name = base.clone();
+                r["name"] = json!(base);
             }
             Ok(r)
         }),
