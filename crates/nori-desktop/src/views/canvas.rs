@@ -1054,7 +1054,6 @@ struct Frame {
     checker_size: f32,
     page: Bounds<Pixels>,
     overlays: Vec<Overlay>,
-    pasteboard: gpui::Hsla,
     edge: gpui::Hsla,
 }
 
@@ -1227,7 +1226,7 @@ impl Render for CanvasView {
                 let g = Geometry::Ellipse { cx: p.0, cy: p.1, rx: r, ry: r };
                 overlays.push(Overlay::Curve(g.segments().iter().map(|s| self.map_seg(*s)).collect(), if dark { gpui::white().opacity(0.8) } else { gpui::black().opacity(0.8) }, 1.0, false));
             }
-            frame = Some(Frame { images, checker: self.checker(dark, scale), checker_size: 256.0, page, overlays, pasteboard, edge: t.line_strong });
+            frame = Some(Frame { images, checker: self.checker(dark, scale), checker_size: 256.0, page, overlays, edge: t.line });
         }
         let cursor = match self.store.read(cx).tool {
             Tool::Hand => gpui::CursorStyle::OpenHand,
@@ -1359,6 +1358,7 @@ impl CanvasView {
     }
 
     /// Where the page's top-left corner is in the window.
+    #[cfg(test)]
     pub fn page_origin(&self) -> Point<Pixels> {
         self.to_window(0.0, 0.0)
     }

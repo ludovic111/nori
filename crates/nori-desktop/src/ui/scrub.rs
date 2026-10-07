@@ -11,6 +11,7 @@ use crate::ui::input::{InputEvent, TextInput};
 #[derive(Clone, Copy, Debug)]
 pub struct ScrubChange {
     pub value: f64,
+    #[allow(dead_code)]
     pub final_: bool,
 }
 

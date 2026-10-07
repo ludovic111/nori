@@ -176,7 +176,7 @@ impl OptionsBar {
             i.mono = true;
             i
         });
-        let mut subs = vec![cx.observe(&store, |this: &mut Self, store, cx| {
+        let mut subs = vec![cx.observe(&store, |this: &mut Self, _store, cx| {
             this.sync(cx);
             cx.notify()
         })];

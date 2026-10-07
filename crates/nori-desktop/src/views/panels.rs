@@ -349,7 +349,7 @@ impl RightColumn {
     fn pages(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let t = cx.theme().clone();
         let Some(doc) = self.store.read(cx).doc.clone() else { return div().into_any_element() };
-        let row = |p: &nori_core::Page, label: String, active: bool, master: bool, cx: &mut Context<Self>| {
+        let row = |p: &nori_core::Page, label: String, active: bool, master: bool, _cx: &mut Context<Self>| {
             let pid = p.id.clone();
             let mid = p.id.clone();
             div()

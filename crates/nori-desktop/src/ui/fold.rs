@@ -26,12 +26,6 @@ impl Fold {
         Self { id: id.into(), title: title.into(), open, trailing: vec![], on_toggle: None, body: div().flex().flex_col().gap(px(10.)) }
     }
 
-    /// Controls at the right of the header (a reset button, keyframe arrows…), shown folded too.
-    pub fn trailing(mut self, el: impl IntoElement) -> Self {
-        self.trailing.push(el.into_any_element());
-        self
-    }
-
     pub fn on_toggle(mut self, f: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_toggle = Some(Rc::new(f));
         self

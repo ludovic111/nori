@@ -27,7 +27,6 @@ pub struct Dialogs {
     export_format: &'static str,
     export_scale: f32,
     export_quality: Entity<Scrub>,
-    export_all_pages: bool,
     // Filter parameters.
     filter_values: HashMap<String, f64>,
     filter_scrubs: HashMap<String, (Entity<Scrub>, Subscription)>,
@@ -89,7 +88,6 @@ impl Dialogs {
             export_format: "png",
             export_scale: 1.0,
             export_quality,
-            export_all_pages: true,
             filter_values: HashMap::new(),
             filter_scrubs: HashMap::new(),
             filter_for: String::new(),
@@ -376,6 +374,21 @@ impl Dialogs {
             .child(list)
             .when(current == "lsuite" && !signed, |d| d.child(Button::new("agent-sign-in", "Sign in to lsuite AI").primary().with_icon("log-in").on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("account.signIn", json!({}), cx)))))
             .child(div().flex().flex_col().gap(px(6.)).child(caps(format!("API key · {key_for}"), cx)).child(self.key_input.clone()).child(div().text_size(px(sz::SM)).text_color(t.text_2).child(format!("Press Enter to save it in the {}. It never leaves this computer except to its provider.", crate::ui::keychain_name()))))
+            .child(caps("Your own agent, outside nori", cx))
+            .child(div().text_size(px(sz::SM)).text_color(t.text_2).child("Claude Code, Codex, Cursor or Claude Desktop can drive nori through its MCP server, with the same commands (and the same permissions) as the Agent panel:"))
+            .child({
+                let line = mcp_line(&s.session.data_dir);
+                let copy = line.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(div().flex_1().min_w_0().px(px(10.)).py(px(8.)).border_1().border_color(t.line).font_family(MONO).text_size(px(sz::SM)).truncate().child(line))
+                    .child(Button::new("copy-mcp", "Copy").small().with_icon("copy").on_click(move |_, _, cx| {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy.clone()));
+                        cx.store().update(cx, |s, cx| s.flash("Copied: paste it in a terminal.", cx));
+                    }))
+            })
             .child(caps("What agents may do", cx))
             .child(perm("perm-enabled", "Agents and MCP clients can use nori", "agent.permissions.enabled", perms.enabled, cx))
             .child(perm("perm-files", "Open, save and export files", "agent.permissions.files", perms.files, cx))
@@ -610,6 +623,12 @@ fn account_section(cx: &App) -> AnyElement {
             .child(div().flex().gap(px(8.)).child(Button::new("sign-in", "Sign in").primary().with_icon("log-in").on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("account.signIn", json!({}), cx)))).child(Button::new("see-plans", "See plans").with_icon("external-link").on_click(move |_, _, cx| cx.open_url(&manage))));
     }
     col.child(div().font_family(MONO).text_size(px(sz::XS)).text_color(t.text_3).child(format!("Server: {server}"))).into_any_element()
+}
+
+/// The line that adds nori's MCP server to Claude Code (`nori-cli mcp-config` has the others).
+fn mcp_line(data_dir: &std::path::Path) -> String {
+    let mcp = nori_control::discovery::entry(data_dir, None).mcp.map(|p| p.display().to_string()).unwrap_or_else(|| crate::ui::mcp_fallback().into());
+    format!("claude mcp add nori -- {} --live", crate::ui::shell_quote(&mcp))
 }
 
 fn capital(s: &str) -> String {

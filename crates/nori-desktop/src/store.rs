@@ -597,10 +597,6 @@ impl Store {
         self.push(Toast { id: 0, kind: ToastKind::Info, text: text.into(), flash: true, action: None }, cx);
     }
 
-    pub fn toast_with(&mut self, kind: ToastKind, text: impl Into<SharedString>, label: impl Into<SharedString>, open: Dialog, cx: &mut Context<Self>) {
-        self.push(Toast { id: 0, kind, text: text.into(), flash: false, action: Some((label.into(), open)) }, cx);
-    }
-
     fn push(&mut self, mut toast: Toast, cx: &mut Context<Self>) {
         toast.id = self.next_toast;
         self.next_toast += 1;

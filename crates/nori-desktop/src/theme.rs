@@ -69,7 +69,6 @@ pub struct Theme {
     pub line: Hsla,
     pub line_strong: Hsla,
     pub danger: Hsla,
-    pub warning: Hsla,
     pub success: Hsla,
 
     pub accent: Hsla,
@@ -93,13 +92,6 @@ pub struct Theme {
     /// Hover and pressed fills for quiet controls.
     pub hover: Hsla,
     pub pressed: Hsla,
-    /// Timeline clip greys by content.
-    pub clip_video: Hsla,
-    pub clip_audio: Hsla,
-    pub clip_text: Hsla,
-    pub clip_generated: Hsla,
-    /// Motion graphics and 3D clips.
-    pub clip_motion: Hsla,
 }
 
 impl Global for Theme {}
@@ -118,8 +110,6 @@ pub mod size {
     pub const R_XS: f32 = 0.0;
     pub const R_SM: f32 = 0.0;
     pub const R_MD: f32 = 0.0;
-    pub const R_LG: f32 = 0.0;
-    pub const R_XL: f32 = 0.0;
 }
 
 /// The interface face: Chakra Petch, cut corners on every letter (bundled, OFL).
@@ -147,7 +137,6 @@ impl Theme {
                 line: ink.opacity(0.10),
                 line_strong: ink.opacity(0.20),
                 danger: c("#ff5b4d"),
-                warning: grey(0.85),
                 success: grey(0.95),
                 accent: ink,
                 accent_hover: grey(0.82),
@@ -165,11 +154,6 @@ impl Theme {
                 drop: ink.opacity(0.11),
                 hover: ink.opacity(0.07),
                 pressed: ink.opacity(0.12),
-                clip_video: grey(0.24),
-                clip_audio: grey(0.13),
-                clip_text: grey(0.32),
-                clip_generated: grey(0.40),
-                clip_motion: grey(0.19),
             }
         } else {
             Theme {
@@ -185,7 +169,6 @@ impl Theme {
                 line: ink.opacity(0.12),
                 line_strong: ink.opacity(0.26),
                 danger: c("#c8291c"),
-                warning: grey(0.20),
                 success: grey(0.04),
                 accent: ink,
                 accent_hover: grey(0.22),
@@ -203,11 +186,6 @@ impl Theme {
                 drop: ink.opacity(0.85),
                 hover: ink.opacity(0.05),
                 pressed: ink.opacity(0.10),
-                clip_video: grey(0.74),
-                clip_audio: grey(0.84),
-                clip_text: grey(0.66),
-                clip_generated: grey(0.58),
-                clip_motion: grey(0.79),
             }
         };
         if transparent {

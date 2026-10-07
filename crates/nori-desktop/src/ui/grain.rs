@@ -6,7 +6,6 @@
 //!
 //! - [`backdrop`]: film grain over the whole page, and two corners of ordered-dither light where
 //!   the old glows were.
-//! - [`dither`]: a dithered fade in a box (empty states, projects without a picture).
 //!
 //! Each size is drawn once and kept, so callers use a few fixed sizes and clip them to their box.
 
@@ -27,8 +26,6 @@ enum Kind {
     /// A corner of dithered light: `(width, height)` logical, the light at `corner` (0 top-left,
     /// 1 bottom-right), `cell` logical pixels per dot.
     Corner { w: u16, h: u16, corner: u8, cell: u8 },
-    /// A dithered fade from the top (`w`×`h`, dots of `cell`).
-    Fade { w: u16, h: u16, cell: u8 },
 }
 
 thread_local! {
@@ -63,7 +60,7 @@ fn make(kind: Kind, scale: f32, ink: bool) -> Arc<RenderImage> {
     let s = scale.max(1.);
     let (lw, lh) = match kind {
         Kind::Grain => (TILE, TILE),
-        Kind::Corner { w, h, .. } | Kind::Fade { w, h, .. } => (w as f32, h as f32),
+        Kind::Corner { w, h, .. } => (w as f32, h as f32),
     };
     let (w, h) = ((lw * s).round() as u32, (lh * s).round() as u32);
     // One "pixel" of the grain is one logical pixel (two device pixels on a Retina screen).
@@ -89,13 +86,6 @@ fn make(kind: Kind, scale: f32, ink: bool) -> Arc<RenderImage> {
                 let level = (1. - d * 1.35 + jitter).clamp(0., 1.).powf(1.6);
                 // A square dot in each lit cell, one device pixel short of the next (a grid you
                 // feel more than see).
-                let inside = x % c < c.saturating_sub(unit).max(1) && y % c < c.saturating_sub(unit).max(1);
-                if inside && level > bayer(cx, cy) { 1. } else { 0. }
-            }
-            Kind::Fade { cell, .. } => {
-                let c = (cell as f32 * s).round().max(1.) as u32;
-                let (cx, cy) = (x / c, y / c);
-                let level = (1. - (cy * c) as f32 / h as f32).clamp(0., 1.).powf(1.8);
                 let inside = x % c < c.saturating_sub(unit).max(1) && y % c < c.saturating_sub(unit).max(1);
                 if inside && level > bayer(cx, cy) { 1. } else { 0. }
             }
@@ -148,13 +138,6 @@ pub fn backdrop(bg: Hsla, window: &Window, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-/// A dithered fade in the ink, `w`×`h` logical pixels, densest at the top, at `opacity` (a fixed
-/// size: each one is drawn once and kept).
-pub fn dither(w: f32, h: f32, opacity: f32, window: &Window, cx: &App) -> gpui::Img {
-    let t = cx.theme();
-    let scale = window.scale_factor();
-    picture(get(Kind::Fade { w: w as u16, h: h as u16, cell: 3 }, scale, ink_is_white(t.ink)), scale, opacity)
-}
 
 /// Four corner brackets over the box of a positioned parent (the marks a viewfinder draws).
 pub fn brackets(size: f32, inset: f32, color: Hsla) -> Div {

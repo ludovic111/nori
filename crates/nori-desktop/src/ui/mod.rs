@@ -67,12 +67,6 @@ pub fn icon(name: &str) -> Icon {
 #[derive(IntoElement)]
 pub struct Icon(Svg);
 
-impl Icon {
-    /// Rotates or scales the drawing (spinners).
-    pub fn with_transformation(self, t: gpui::Transformation) -> Self {
-        Self(self.0.with_transformation(t))
-    }
-}
 
 impl Styled for Icon {
     fn style(&mut self) -> &mut gpui::StyleRefinement {
@@ -248,17 +242,8 @@ impl Button {
         }
         self
     }
-    pub fn full_width(mut self) -> Self {
-        self.full = true;
-        self
-    }
     pub fn tooltip(mut self, t: impl Into<SharedString>) -> Self {
         self.tooltip = Some(t.into());
-        self
-    }
-    /// Colours the icon and label (e.g. the accent for AI actions).
-    pub fn color(mut self, c: Hsla) -> Self {
-        self.color = Some(c);
         self
     }
     pub fn on_click(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
@@ -421,26 +406,8 @@ pub fn switch(id: impl Into<ElementId>, label: impl Into<SharedString>, on: bool
         .on_click(move |_, w, cx| on_toggle(!on, w, cx))
 }
 
-/// Wraps a child so clicks inside don't reach what is behind it.
-pub fn stop(el: impl IntoElement) -> AnyElement {
-    div().on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation()).child(el).into_any_element()
-}
 
-/// `1:05.25` style time (minutes:seconds.hundredths).
-pub fn timecode(t: f64) -> String {
-    // Rounded once, so 59.996 s reads 1:00.00 and not 0:60.00.
-    let cs = (t.max(0.0) * 100.0).round() as u64;
-    format!("{}:{:02}.{:02}", cs / 6000, (cs % 6000) / 100, cs % 100)
-}
 
-/// `00:01:05:12` style timecode at `fps`.
-pub fn smpte(t: f64, fps: f64) -> String {
-    let fps = fps.max(1.0);
-    let total = (t.max(0.0) * fps).round() as u64;
-    let f = total % fps.round() as u64;
-    let secs = total / fps.round() as u64;
-    format!("{:02}:{:02}:{:02}:{:02}", secs / 3600, (secs / 60) % 60, secs % 60, f)
-}
 
 /// Minimise, maximise and close, drawn by nori where the system doesn't draw them: Windows
 /// (nori's top bar is the title bar there) and Linux compositors that ask for client-side
@@ -491,16 +458,6 @@ pub fn window_controls(window: &Window, cx: &App) -> Option<AnyElement> {
     )
 }
 
-/// "Show in Finder" on macOS, "Show in Explorer" on Windows, "Show in folder" elsewhere.
-pub fn reveal_label() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Show in Finder"
-    } else if cfg!(windows) {
-        "Show in Explorer"
-    } else {
-        "Show in folder"
-    }
-}
 
 /// Where the OS keeps secrets, as people know it.
 pub fn keychain_name() -> &'static str {
