@@ -367,7 +367,7 @@ impl Writer {
                 }
                 Content::Text { text } => {
                     let _ = write!(self.body, "<g id=\"{}\" data-name=\"{name}\" aria-label=\"{}\"{attrs}>", l.id, esc(&text.text));
-                    for (c, p) in nori_render::text::outlines(doc, &l.id) {
+                    for (c, p) in nori_render::text::outlines_on(doc, &l.id, Some(doc.page_number(&page.id))) {
                         let _ = write!(self.body, "<path d=\"{}\" fill=\"{}\"{}/>", skia_d(&p), hex(&c), if c.a < 1.0 { format!(" fill-opacity=\"{:.3}\"", c.a) } else { String::new() });
                     }
                     self.body.push_str("</g>");

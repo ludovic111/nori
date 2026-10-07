@@ -252,6 +252,36 @@ impl Document {
         self.masters.iter().position(|p| p.id == id)
     }
 
+    /// What a page shows, as three layer lists drawn one after the other (each top-first): its
+    /// paper (the bottom layer, when it has a master and that layer is a fill or the
+    /// "Background" pixels covering the page), its
+    /// master's layers, then the rest of its own. Masters sit on the paper, under the page's
+    /// own things, as in InDesign.
+    pub fn page_stack<'a>(&'a self, page: &'a Page) -> [&'a [Layer]; 3] {
+        let master = page.master.as_deref().and_then(|id| self.master_index(id)).map(|i| &self.masters[i]).filter(|m| m.id != page.id);
+        let Some(m) = master else { return [&[], &[], &page.layers[..]] };
+        let n = page.layers.len();
+        match page.layers.last() {
+            Some(l) if l.mask.is_none() && Self::is_paper(l, page) => [&page.layers[n - 1..], &m.layers[..], &page.layers[..n - 1]],
+            _ => [&[], &m.layers[..], &page.layers[..]],
+        }
+    }
+
+    /// Whether a page's bottom layer is its paper: a fill layer, or the "Background" pixels
+    /// covering the whole page that new documents start with.
+    fn is_paper(l: &Layer, page: &Page) -> bool {
+        match &l.content {
+            Content::Fill { .. } => true,
+            Content::Raster { x: 0, y: 0, pixels } => l.name == "Background" && pixels.width() >= page.width && pixels.height() >= page.height,
+            _ => false,
+        }
+    }
+
+    /// A page's number from 1 (0 for a master page or an unknown id).
+    pub fn page_number(&self, id: &str) -> usize {
+        self.page_index(id).map_or(0, |i| i + 1)
+    }
+
     /// The active page's index among the pages (the first page if the active one is gone or
     /// is a master).
     pub fn active_index(&self) -> usize {

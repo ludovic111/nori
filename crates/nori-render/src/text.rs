@@ -367,17 +367,29 @@ fn paint_set(set: &Set, t: &TextLayer, overflow: bool) -> TextImage {
     TextImage { rect, rgba, overflow }
 }
 
-/// The page number (1-based) a layer is on.
-fn page_number(doc: &Document, id: &str) -> usize {
+/// The page number (1-based) `{page}` stands for in a layer: the page it is on, or for a layer
+/// on a master page, the page `on` it is drawn on (0 when none is given).
+fn page_number(doc: &Document, id: &str, on: Option<usize>) -> usize {
     match doc.path_of(id).map(|l| l.page) {
         Some(nori_core::PageRef::Page(i)) => i + 1,
-        _ => 0,
+        Some(nori_core::PageRef::Master(_)) => on.unwrap_or(0),
+        None => 0,
     }
+}
+
+/// Whether a text layer's words change with the page it is drawn on.
+pub fn has_page_tokens(t: &TextLayer) -> bool {
+    t.text.contains("{page}")
 }
 
 /// Draws every frame of the thread `id` belongs to (point text: just itself). Returns each
 /// frame's picture by layer id.
 pub fn render_thread(doc: &Document, id: &str) -> Vec<(String, Arc<TextImage>)> {
+    render_thread_on(doc, id, None)
+}
+
+/// [`render_thread`] for a thread on a master page, drawn on page number `on`.
+pub fn render_thread_on(doc: &Document, id: &str, on: Option<usize>) -> Vec<(String, Arc<TextImage>)> {
     let ids = doc.thread_of(id);
     let frames: Vec<(String, TextLayer)> = ids
         .iter()
@@ -388,7 +400,7 @@ pub fn render_thread(doc: &Document, id: &str) -> Vec<(String, Arc<TextImage>)> 
         .collect();
     let Some((head_id, head)) = frames.first() else { return vec![] };
     // Remembered by everything that goes into it.
-    let pages: Vec<usize> = frames.iter().map(|(i, _)| page_number(doc, i)).collect();
+    let pages: Vec<usize> = frames.iter().map(|(i, _)| page_number(doc, i, on)).collect();
     let styles = serde_json::to_string(&doc.styles.character).unwrap_or_default();
     let key = format!("{}|{:?}|{}|{}", serde_json::to_string(&frames).unwrap_or_default(), pages, doc.pages.len(), styles);
     static CACHE: OnceLock<Mutex<HashMap<String, Vec<(String, Arc<TextImage>)>>>> = OnceLock::new();
@@ -396,7 +408,7 @@ pub fn render_thread(doc: &Document, id: &str) -> Vec<(String, Arc<TextImage>)> 
     if let Some(v) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
         return v.clone();
     }
-    let (text, spans) = story(Some(doc), head, page_number(doc, head_id));
+    let (text, spans) = story(Some(doc), head, page_number(doc, head_id, on));
     let mut out = vec![];
     let mut from = 0;
     let mut f = fonts();
@@ -435,6 +447,11 @@ pub fn render(t: &TextLayer) -> Arc<TextImage> {
 /// Glyph outlines of a text layer as it is drawn on its page (for SVG and PDF, which keep text
 /// as vectors): `(colour, path)` per colour.
 pub fn outlines(doc: &Document, id: &str) -> Vec<(Color, tiny_skia::Path)> {
+    outlines_on(doc, id, None)
+}
+
+/// [`outlines`] for a layer that may be on a master page, drawn on page number `on`.
+pub fn outlines_on(doc: &Document, id: &str, on: Option<usize>) -> Vec<(Color, tiny_skia::Path)> {
     let ids = doc.thread_of(id);
     let frames: Vec<(String, TextLayer)> = ids
         .iter()
@@ -444,7 +461,7 @@ pub fn outlines(doc: &Document, id: &str) -> Vec<(Color, tiny_skia::Path)> {
         })
         .collect();
     let Some((head_id, head)) = frames.first() else { return vec![] };
-    let (text, spans) = story(Some(doc), head, page_number(doc, head_id));
+    let (text, spans) = story(Some(doc), head, page_number(doc, head_id, on));
     let mut from = 0;
     let mut f = fonts();
     for (fid, frame) in &frames {

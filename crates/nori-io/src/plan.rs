@@ -44,10 +44,8 @@ pub fn portable(l: &Layer) -> bool {
 /// and including the topmost layer that can't be written as it is, and the layers above it
 /// (top first).
 pub fn split(doc: &Document, page: &Page) -> (Option<(Raster, i32, i32)>, Vec<Layer>) {
-    let mut all: Vec<Layer> = page.layers.clone();
-    if let Some(m) = page.master.as_deref().and_then(|id| doc.master_index(id)).map(|i| &doc.masters[i]) {
-        all.extend(m.layers.iter().cloned());
-    }
+    let [paper, master, own] = doc.page_stack(page);
+    let all: Vec<Layer> = own.iter().chain(master).chain(paper).cloned().collect();
     match all.iter().position(|l| !portable(l)) {
         None => (None, all),
         Some(k) => {

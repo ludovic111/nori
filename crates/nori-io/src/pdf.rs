@@ -149,7 +149,7 @@ fn layers(s: &mut krilla::surface::Surface, doc: &Document, page: &Page, list: &
                 }
             }
             Content::Text { .. } => {
-                for (c, p) in nori_render::text::outlines(doc, &l.id) {
+                for (c, p) in nori_render::text::outlines_on(doc, &l.id, Some(doc.page_number(&page.id))) {
                     if let Some(path) = skia_path(&p) {
                         s.set_fill(Some(Fill { paint: rgb_of(&c).into(), opacity: n(c.a), rule: FillRule::NonZero }));
                         s.set_stroke(None);

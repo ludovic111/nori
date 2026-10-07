@@ -18,6 +18,8 @@ use crate::text::TextImage;
 pub struct Prepared {
     adjust: HashMap<String, Compiled>,
     text: HashMap<String, Arc<TextImage>>,
+    /// Text on master pages that says `{page}`, drawn for each page number it shows on.
+    paged: HashMap<(String, usize), Arc<TextImage>>,
 }
 
 pub fn prepare(doc: &Document) -> Prepared {
@@ -38,11 +40,33 @@ pub fn prepare(doc: &Document) -> Prepared {
             _ => {}
         }
     }
+    for (i, page) in doc.pages.iter().enumerate() {
+        let [_, master, _] = doc.page_stack(page);
+        for l in master.iter().flat_map(|l| l.walk()) {
+            if let Content::Text { text } = &l.content
+                && crate::text::has_page_tokens(text)
+            {
+                for (id, img) in crate::text::render_thread_on(doc, &l.id, Some(i + 1)) {
+                    p.paged.insert((id, i + 1), img);
+                }
+            }
+        }
+    }
     p
 }
 
 impl Prepared {
     pub fn text(&self, id: &str) -> Option<&Arc<TextImage>> {
+        self.text.get(id)
+    }
+
+    /// A layer's picture as drawn on page number `page` (master text says that page's number).
+    pub fn text_on(&self, id: &str, page: usize) -> Option<&Arc<TextImage>> {
+        if page > 0
+            && let Some(img) = self.paged.get(&(id.to_string(), page))
+        {
+            return Some(img);
+        }
         self.text.get(id)
     }
 }
@@ -65,19 +89,19 @@ pub fn composite_rect(doc: &Document, prep: &Prepared, r: Rect) -> Vec<Px> {
     composite_page(doc, doc.page(), prep, r)
 }
 
-/// A page inside `r`: its master's layers, then its own, premultiplied, rows of `r.w`.
+/// A page inside `r`: its paper, its master's layers, then its own (`Document::page_stack`),
+/// premultiplied, rows of `r.w`.
 pub fn composite_page(doc: &Document, page: &Page, prep: &Prepared, r: Rect) -> Vec<Px> {
     let mut buf = vec![[0f32; 4]; (r.w * r.h) as usize];
-    if let Some(m) = page.master.as_deref().and_then(|id| doc.master_index(id)).map(|i| &doc.masters[i])
-        && m.id != page.id
-    {
-        composite_list(&m.layers, prep, r, &mut buf);
+    let n = doc.page_number(&page.id);
+    for list in doc.page_stack(page) {
+        composite_list(list, prep, r, &mut buf, n);
     }
-    composite_list(&page.layers, prep, r, &mut buf);
     buf
 }
 
-fn composite_list(layers: &[Layer], prep: &Prepared, r: Rect, buf: &mut [Px]) {
+/// `page`: the number of the page being drawn (what master text says for `{page}`).
+fn composite_list(layers: &[Layer], prep: &Prepared, r: Rect, buf: &mut [Px], page: usize) {
     // The coverage of the last layer that wasn't clipped: layers clipped to it show only there.
     let mut base: Option<Vec<f32>> = None;
     for l in layers.iter().rev() {
@@ -85,7 +109,7 @@ fn composite_list(layers: &[Layer], prep: &Prepared, r: Rect, buf: &mut [Px]) {
             base = None;
         }
         let clip = if l.clipped { base.as_deref() } else { None };
-        let coverage = draw_layer(l, prep, r, buf, clip);
+        let coverage = draw_layer(l, prep, r, buf, clip, page);
         if !l.clipped {
             base = Some(coverage.unwrap_or_else(|| vec![0.0; buf.len()]));
         }
@@ -93,7 +117,7 @@ fn composite_list(layers: &[Layer], prep: &Prepared, r: Rect, buf: &mut [Px]) {
 }
 
 /// Draws one layer onto `buf`; returns its coverage (for layers clipped to it) when it has one.
-fn draw_layer(l: &Layer, prep: &Prepared, r: Rect, buf: &mut [Px], clip: Option<&[f32]>) -> Option<Vec<f32>> {
+fn draw_layer(l: &Layer, prep: &Prepared, r: Rect, buf: &mut [Px], clip: Option<&[f32]>, page: usize) -> Option<Vec<f32>> {
     if !l.visible || l.opacity <= 0.0 {
         return None;
     }
@@ -138,7 +162,7 @@ fn draw_layer(l: &Layer, prep: &Prepared, r: Rect, buf: &mut [Px], clip: Option<
             })
         }
         Content::Text { .. } | Content::Vector { .. } => {
-            let img = prep.text(&l.id)?;
+            let img = prep.text_on(&l.id, page)?;
             if img.rect.intersect(&r).is_empty() {
                 return Some(vec![0.0; buf.len()]);
             }
@@ -180,7 +204,7 @@ fn draw_layer(l: &Layer, prep: &Prepared, r: Rect, buf: &mut [Px], clip: Option<
         Content::Group { children, .. } => {
             if l.blend == BlendMode::PassThrough {
                 let before = buf.to_vec();
-                composite_list(children, prep, r, buf);
+                composite_list(children, prep, r, buf, page);
                 if l.opacity < 1.0 || mask.is_some() || clip.is_some() {
                     for (i, d) in buf.iter_mut().enumerate() {
                         let k = k_at(i);
@@ -192,7 +216,7 @@ fn draw_layer(l: &Layer, prep: &Prepared, r: Rect, buf: &mut [Px], clip: Option<
                 None
             } else {
                 let mut inner = vec![[0f32; 4]; buf.len()];
-                composite_list(children, prep, r, &mut inner);
+                composite_list(children, prep, r, &mut inner, page);
                 let mut cov = vec![0f32; buf.len()];
                 for (i, d) in buf.iter_mut().enumerate() {
                     let a = inner[i][3];
@@ -369,5 +393,26 @@ mod tests {
         assert_eq!(out.len(), 700 * 300 * 4);
         assert!(out.chunks_exact(4).all(|p| p == [128, 128, 128, 255]));
         assert_eq!(pick(&d, 650, 290), [128, 128, 128, 255]);
+    }
+
+    #[test]
+    fn masters_sit_on_the_paper_and_number_each_page() {
+        let mut d = Document::new("t", 160, 80, Some(Color::WHITE));
+        let mut p2 = d.pages[0].clone();
+        p2.id = "P2".into();
+        d.pages.push(p2);
+        let mut m = nori_core::Page::new("M1", "A-Master", 160, 80);
+        let t = nori_core::TextLayer { text: "{page}".into(), size: 60.0, x: 10.0, y: 5.0, color: Color::rgb(0.0, 0.0, 0.0), ..Default::default() };
+        m.layers.push(Layer::new("L50", "Folio", Content::Text { text: t }));
+        d.masters.push(m);
+        for p in &mut d.pages {
+            p.master = Some("M1".into());
+        }
+        let one = flatten_page(&d, &d.pages[0]);
+        let two = flatten_page(&d, &d.pages[1]);
+        let ink = |px: &[u8]| px.chunks_exact(4).filter(|p| p[0] < 100).count();
+        assert!(ink(&one) > 50, "the white paper hides the master");
+        assert!(ink(&two) > 50);
+        assert_ne!(one, two, "both pages say the same number");
     }
 }

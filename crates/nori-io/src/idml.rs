@@ -217,7 +217,7 @@ fn path_of(e_xml: &[(Vec<f32>, Option<Vec<f32>>, Option<Vec<f32>>)], m: &M, clos
 /// What a spread holds, before it is sorted onto pages.
 enum Item {
     Frame { id: String, story: String, next: Option<String>, bounds: [f32; 4] },
-    Shape { name: String, subpaths: Vec<SubPath>, fill: Option<Color>, stroke: Option<(Color, f32)>, oval: bool },
+    Shape { name: String, subpaths: Vec<SubPath>, fill: Option<Color>, stroke: Option<(Color, f32)> },
     Picture { path: String, bounds: [f32; 4] },
 }
 
@@ -350,7 +350,7 @@ fn spread(xml: &str, colors: &HashMap<String, Color>) -> (Vec<PageBox>, Vec<Item
                             if fill.is_none() && stroke.is_none() {
                                 continue;
                             }
-                            items.push(Item::Shape { name: o.attrs.get("Name").cloned().filter(|n| !n.is_empty() && n != "$ID/").unwrap_or_else(|| o.tag.clone()), subpaths: o.subpaths, fill, stroke, oval: o.tag == "Oval" });
+                            items.push(Item::Shape { name: o.attrs.get("Name").cloned().filter(|n| !n.is_empty() && n != "$ID/").unwrap_or_else(|| o.tag.clone()), subpaths: o.subpaths, fill, stroke });
                         }
                     }
                 }
@@ -451,7 +451,7 @@ pub fn read(bytes: &[u8], name: &str) -> Result<Document, String> {
                     let nm: String = st.text.lines().next().unwrap_or("Text").chars().take(24).collect();
                     Layer::new(lid, if nm.trim().is_empty() { "Text frame".to_string() } else { nm }, Content::Text { text: t })
                 }
-                Item::Shape { name, subpaths, fill, stroke, oval: _ } => {
+                Item::Shape { name, subpaths, fill, stroke } => {
                     let subpaths = subpaths
                         .into_iter()
                         .map(|s| SubPath {
