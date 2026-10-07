@@ -183,6 +183,8 @@ pub fn bind(cx: &mut App) {
             }
         }
     }
+    // Escape closes a dialog too (Deselect closes what is open first).
+    b.push(KeyBinding::new("escape", Deselect, Some("Workspace && Modal")));
     b.push(KeyBinding::new(if cfg!(target_os = "macos") { "cmd-q" } else { "ctrl-q" }, Quit, None));
     cx.bind_keys(b);
 }
@@ -206,9 +208,16 @@ pub fn keys_label(keys: &str) -> SharedString {
 }
 
 pub fn label_for(keys: &str, mac: bool) -> String {
-    let parts: Vec<&str> = if keys.len() > 1 && keys.contains('-') && !keys.ends_with("--") { keys.split('-').collect() } else { vec![keys] };
-    let (mods, key) = parts.split_at(parts.len().saturating_sub(1));
-    let key = key.first().copied().unwrap_or(if keys.ends_with("--") { "-" } else { keys });
+    // `M--` is ⌘ and the minus key.
+    let (mods, key): (Vec<&str>, &str) = if keys.len() > 1 && keys.ends_with("--") {
+        (keys[..keys.len() - 2].split('-').filter(|m| !m.is_empty()).collect(), "-")
+    } else if keys.len() > 1 && keys.contains('-') {
+        let mut p: Vec<&str> = keys.split('-').collect();
+        let k = p.pop().unwrap_or(keys);
+        (p, k)
+    } else {
+        (vec![], keys)
+    };
     let key_name = match key {
         "escape" => if mac { "⎋" } else { "Esc" }.to_string(),
         "enter" => if mac { "↩" } else { "Enter" }.to_string(),
@@ -220,7 +229,7 @@ pub fn label_for(keys: &str, mac: bool) -> String {
         k => k.to_uppercase(),
     };
     let mut out = String::new();
-    for m in mods {
+    for m in &mods {
         out.push_str(match (*m, mac) {
             ("M", true) => "⌘",
             ("M", false) => "Ctrl+",
