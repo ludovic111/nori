@@ -210,10 +210,10 @@ pub fn check(d: &Document, r: PageRef, depth: Depth) -> Result<Report, String> {
                                 Severity::Error,
                                 "contrast",
                                 l,
-                                format!("`{}` ({}) has a contrast of {:.1}:1 against what is behind it; {} text needs {}:1. Darken or lighten it, or put a scrim behind it.", l.name, l.id, c.ratio, if c.large { "large" } else { "body" }, trim_num(c.required as f64)),
+                                format!("`{}` ({}) has a contrast of {:.1}:1 against what is behind it; {} text needs {}:1. Darken or lighten it, or put a scrim behind it.", l.name, l.id, c.ratio, if c.large { "large" } else { "body" }, trim_num(c.required)),
                             ));
                         } else if c.worst < c.required {
-                            problems.push(problem(Severity::Warning, "contrast", l, format!("Part of `{}` ({}) falls on a busy area: its worst tenth is {:.1}:1 (needs {}:1).", l.name, l.id, c.worst, trim_num(c.required as f64))));
+                            problems.push(problem(Severity::Warning, "contrast", l, format!("Part of `{}` ({}) falls on a busy area: its worst tenth is {:.1}:1 (needs {}:1).", l.name, l.id, c.worst, trim_num(c.required))));
                         }
                         contrast.push(c);
                     }
@@ -225,7 +225,7 @@ pub fn check(d: &Document, r: PageRef, depth: Depth) -> Result<Report, String> {
                             let msg = if print {
                                 format!("`{}` ({}) holds about {} ppi of detail at its printed size ({}×{} mm); print wants 300 (at least 200 for posters). Use a bigger original or print it smaller.", l.name, l.id, res.effective_ppi.round(), res.print_mm[0], res.print_mm[1])
                             } else {
-                                format!("`{}` ({}) looks enlarged about {}×: it will look soft. Use a bigger original or show it smaller.", l.name, l.id, trim_num(res.enlarged as f64))
+                                format!("`{}` ({}) looks enlarged about {}×: it will look soft. Use a bigger original or show it smaller.", l.name, l.id, trim_num(res.enlarged))
                             };
                             problems.push(problem(sev, kind, l, msg));
                         }
@@ -371,14 +371,14 @@ fn text_contrast(d: &Document, page: &Page, prep: &nori_render::Prepared, l: &La
     behind.layers = without(&page.layers, &l.id);
     let fg = nori_render::composite::flatten_page_with(d, &alone, prep, area);
     let bg = nori_render::composite::flatten_page_with(d, &behind, prep, area);
-    let max_a = fg.chunks_exact(4).map(|p| p[3]).max().unwrap_or(0);
+    let max_a = fg.as_chunks::<4>().0.iter().map(|p| p[3]).max().unwrap_or(0);
     if max_a < 32 {
         return None;
     }
     let core = (max_a as u32 * 3 / 4) as u8;
     let mut ratios: Vec<f32> = fg
-        .chunks_exact(4)
-        .zip(bg.chunks_exact(4))
+        .as_chunks::<4>().0.iter()
+        .zip(bg.as_chunks::<4>().0)
         .filter(|(f, _)| f[3] >= core)
         .map(|(f, b)| {
             // What is behind, over white paper where the page is transparent.
@@ -448,7 +448,7 @@ fn resolution(d: &Document, page: &Page, l: &Layer, pixels: &nori_core::Raster, 
 }
 
 fn luma(rgba: &[u8]) -> Vec<f32> {
-    rgba.chunks_exact(4)
+    rgba.as_chunks::<4>().0.iter()
         .map(|p| {
             let a = p[3] as f32 / 255.0;
             // Over mid grey, so transparent edges don't read as detail.
@@ -514,7 +514,7 @@ pub fn enlargement(pixels: &nori_core::Raster, content: Rect) -> Option<f32> {
     let small = (side / 2).max(4);
     let down = resample_rgba(&rgba, side, side, small, small, Filter::Lanczos);
     let up = resample_rgba(&down, small, small, side, side, Filter::Lanczos);
-    let err: f32 = up.chunks_exact(4).zip(&l).map(|(p, v)| (p[0] as f32 - v).abs()).sum::<f32>() / (n * n) as f32;
+    let err: f32 = up.as_chunks::<4>().0.iter().zip(&l).map(|(p, v)| (p[0] as f32 - v).abs()).sum::<f32>() / (n * n) as f32;
     let r = err / act;
     // Calibrated on pictures enlarged 2× and 3× with bicubic (tests below).
     Some(if r >= DETAIL_THRESHOLD {

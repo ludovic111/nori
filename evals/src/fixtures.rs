@@ -105,7 +105,7 @@ pub fn hash(bytes: &[u8]) -> u64 {
 pub fn mean_luminance(d: &Document, p: &nori_core::Page) -> f64 {
     let rgba = nori_render::composite::flatten_page(d, p);
     let n = (rgba.len() / 4).max(1) as f64;
-    rgba.chunks_exact(4)
+    rgba.as_chunks::<4>().0.iter()
         .map(|c| {
             let a = c[3] as f64 / 255.0;
             let v = |x: u8| x as f64 * a + 255.0 * (1.0 - a);

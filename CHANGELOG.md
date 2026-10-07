@@ -28,6 +28,8 @@ MCP client alike. And updates now come through lsuite.
   (`nori-cli --file poster.nori agent "…" --provider claude-code`).
 - **Evals.** Twelve design jobs run headless with a real model and scored automatically on the
   resulting document (`evals/`, results in `evals/RESULTS.md`).
+- **`doc.batch` takes tool names.** A batch's commands can be written `text.update` or
+  `text_update`, the name agents know them by.
 - **Updates through lsuite.** nori's updates come from lsuite.xyz with your free lsuite account
   (signed in once in the lsuite app); signed out, Settings › Updates says so. Signatures are
   checked exactly as before.
