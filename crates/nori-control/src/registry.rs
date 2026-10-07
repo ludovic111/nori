@@ -168,8 +168,11 @@ pub fn commands() -> &'static [Spec] {
     crate::commands::SPECS
 }
 
+/// A command by name (`text.update`) or by its tool name (`text_update`: agents write the tool
+/// names they know inside `doc.batch` too).
 pub fn spec(name: &str) -> Option<&'static Spec> {
-    commands().iter().find(|s| s.name == name)
+    let same = |s: &Spec| s.name.len() == name.len() && s.name.bytes().zip(name.bytes()).all(|(a, b)| a == b || (a == b'.' && b == b'_'));
+    commands().iter().find(|s| same(s))
 }
 
 /// Runs a command. This is the only door into nori: the window, the agent,

@@ -114,7 +114,8 @@ async fn batches_are_one_step_and_roll_back() {
     let before = ok(&s, "history.list", json!({})).await["undo"].as_array().unwrap().len();
     ok(&s, "doc.batch", json!({ "commands": [
         { "command": "layer.add", "params": { "name": "A" } },
-        { "command": "layer.add", "params": { "name": "B" } },
+        // Agents write the tool names they know (`layer_add`) inside a batch too.
+        { "command": "layer_add", "params": { "name": "B" } },
     ] })).await;
     let after = ok(&s, "history.list", json!({})).await["undo"].as_array().unwrap().len();
     assert_eq!(after, before + 1);
