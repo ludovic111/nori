@@ -52,14 +52,14 @@ pub struct Contrast {
     pub text: String,
     /// Type size in pixels and in points at the document's dpi.
     pub size_px: f32,
-    pub size_pt: f32,
+    pub size_pt: f64,
     /// Large text (18 pt, or 14 pt bold) needs 3:1 instead of 4.5:1.
     pub large: bool,
     /// Median contrast ratio over the glyphs' pixels.
-    pub ratio: f32,
+    pub ratio: f64,
     /// The worst tenth of the glyphs' pixels (busy backgrounds).
-    pub worst: f32,
-    pub required: f32,
+    pub worst: f64,
+    pub required: f64,
     pub ok: bool,
 }
 
@@ -71,13 +71,13 @@ pub struct Resolution {
     /// The picture's pixels on the page.
     pub pixels: [u32; 2],
     /// Its printed size at the document's dpi.
-    pub print_mm: [f32; 2],
+    pub print_mm: [f64; 2],
     /// Pixels per inch at that size (the document's dpi).
-    pub ppi: f32,
+    pub ppi: f64,
     /// How much it was enlarged, judged from its detail (1: sharp to the pixel).
-    pub enlarged: f32,
+    pub enlarged: f64,
     /// Real detail per inch: `ppi / enlarged`.
-    pub effective_ppi: f32,
+    pub effective_ppi: f64,
     pub ok: bool,
 }
 
@@ -92,7 +92,7 @@ pub struct Report {
     pub height: u32,
     pub dpi: f32,
     /// The trim size in millimetres, and whether the document is for print (200 dpi or more).
-    pub print_mm: [f32; 2],
+    pub print_mm: [f64; 2],
     pub print: bool,
     pub ok: bool,
     pub errors: usize,
@@ -248,7 +248,7 @@ pub fn check(d: &Document, r: PageRef, depth: Depth) -> Result<Report, String> {
     }
     let errors = problems.iter().filter(|p| p.severity == Severity::Error).count();
     let warnings = problems.iter().filter(|p| p.severity == Severity::Warning).count();
-    let to_mm = |px: u32| (px as f32 / d.dpi.max(1.0) * 25.4 * 10.0).round() / 10.0;
+    let to_mm = |px: u32| (px as f64 / d.dpi.max(1.0) as f64 * 25.4 * 10.0).round() / 10.0;
     Ok(Report {
         page: page.id.clone(),
         number,
@@ -400,7 +400,7 @@ fn text_contrast(d: &Document, page: &Page, prep: &nori_render::Prepared, l: &La
     // Screen documents: CSS pixels (24 px, or 18.66 px bold). Print: points (18, or 14 bold).
     let large = if d.dpi < PRINT_DPI { text.size >= 24.0 || (bold && text.size >= 18.66) } else { size_pt >= 18.0 || (bold && size_pt >= 14.0) };
     let required = if large { 3.0 } else { 4.5 };
-    let round = |x: f32| (x * 100.0).round() / 100.0;
+    let round = |x: f32| (x as f64 * 100.0).round() / 100.0;
     Some(Contrast {
         layer_id: l.id.clone(),
         name: l.name.clone(),
@@ -410,7 +410,7 @@ fn text_contrast(d: &Document, page: &Page, prep: &nori_render::Prepared, l: &La
         large,
         ratio: round(ratio),
         worst: round(worst),
-        required,
+        required: required as f64,
         ok: ratio >= required,
     })
 }
@@ -433,16 +433,16 @@ fn resolution(d: &Document, page: &Page, l: &Layer, pixels: &nori_core::Raster, 
     let enlarged = enlargement(pixels, content).unwrap_or(1.0);
     let ppi = d.dpi;
     let effective = ppi / enlarged;
-    let to_mm = |px: u32| (px as f32 / d.dpi.max(1.0) * 25.4 * 10.0).round() / 10.0;
+    let to_mm = |px: u32| (px as f64 / d.dpi.max(1.0) as f64 * 25.4 * 10.0).round() / 10.0;
     let ok = if print { effective >= 250.0 || (effective >= 180.0 && on_page.w.max(on_page.h) as f32 / d.dpi >= 16.0) } else { enlarged < 1.6 };
     Some(Resolution {
         layer_id: l.id.clone(),
         name: l.name.clone(),
         pixels: [on_page.w, on_page.h],
         print_mm: [to_mm(on_page.w), to_mm(on_page.h)],
-        ppi,
-        enlarged,
-        effective_ppi: (effective * 10.0).round() / 10.0,
+        ppi: ppi as f64,
+        enlarged: enlarged as f64,
+        effective_ppi: (effective as f64 * 10.0).round() / 10.0,
         ok,
     })
 }
