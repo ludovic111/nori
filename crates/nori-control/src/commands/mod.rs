@@ -127,7 +127,7 @@ pub static SPECS: &[Spec] = &[
     ]),
     edit("page.addGuide", "Add a guide line to a page (vertical at x, or horizontal at y).", &[req("at", Number, "Position in pixels."), opt("vertical", Boolean, "Vertical (default true)."), PAGE]),
     edit("page.clearGuides", "Remove a page's guides.", &[PAGE]),
-    edit("page.addMaster", "Make a master page (what repeats on the pages it's applied to: page numbers, a frame, a logo), from scratch or from a page's layers. Edit it with page.select and the usual commands; apply it with page.update master=…", &[
+    edit("page.addMaster", "Make a master page (what repeats on the pages it's applied to: page numbers, a frame, a logo), from scratch or from a page's layers. Edit it with page.select and the usual commands; apply it to pages with page.update master=<its id>.", &[
         opt("name", String, "Name (default \"A-Master\")."),
         opt("from", String, "Copy this page's layers and grid."),
     ]),

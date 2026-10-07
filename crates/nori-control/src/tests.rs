@@ -42,8 +42,8 @@ async fn a_photo_workflow() {
     // Select the left half and blur only there.
     ok(&s, "select.rect", json!({ "x": 0, "y": 0, "width": 200, "height": 300 })).await;
     ok(&s, "filter.apply", json!({ "filter": "gaussianBlur", "params": { "radius": 6 } })).await;
-    let left = ok(&s, "raster.pick", json!({ "x": 100, "y": 140, "layerId": id })).await;
-    let right = ok(&s, "raster.pick", json!({ "x": 300, "y": 140, "layerId": id })).await;
+    let left = ok(&s, "raster.pick", json!({ "x": 100, "y": 133, "layerId": id })).await;
+    let right = ok(&s, "raster.pick", json!({ "x": 300, "y": 133, "layerId": id })).await;
     assert_ne!(left["rgba"][3], json!(0), "the blur spread the stroke on the left");
     assert_eq!(right["rgba"][3], json!(0), "the right is untouched");
     ok(&s, "select.none", json!({})).await;

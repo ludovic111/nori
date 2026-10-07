@@ -108,11 +108,11 @@ mod tests {
         assert_eq!(take_unseen(dir.path()), None);
         assert_eq!(take_unseen(dir.path()), None);
         // Coming from 0.1.0: everything since.
-        std::fs::write(dir.path().join("last-version"), "0.1.0").unwrap();
-        assert_eq!(take_unseen(dir.path()).as_deref(), Some("0.1.0"));
-        let shown = since("0.1.0");
+        std::fs::write(dir.path().join("last-version"), "0.0.9").unwrap();
+        assert_eq!(take_unseen(dir.path()).as_deref(), Some("0.0.9"));
+        let shown = since("0.0.9");
         assert!(shown.iter().any(|r| r.version == crate::update::CURRENT));
-        assert!(shown.iter().all(|r| r.version != "0.1.0"));
+        assert!(shown.iter().all(|r| r.version != "0.0.9"));
         assert_eq!(take_unseen(dir.path()), None);
     }
 }
