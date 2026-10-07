@@ -200,6 +200,24 @@ impl Editor {
         Ok(out)
     }
 
+    /// Changes what is being looked at (the active layer, the page shown) with `f`: no undo
+    /// step and nothing to save, as in other editors; the revision still moves so every view
+    /// follows. If `f` fails, the document is put back as it was.
+    pub fn look<R>(&mut self, f: impl FnOnce(&mut Document) -> Result<R, String>) -> Result<R, EditError> {
+        let before = self.doc.clone();
+        let out = match f(&mut self.doc) {
+            Ok(out) => out,
+            Err(e) => {
+                self.doc = before;
+                return Err(EditError::Invalid(e));
+            }
+        };
+        if !same(&before, &self.doc) {
+            self.revision += 1;
+        }
+        Ok(out)
+    }
+
     /// Replaces the whole document as one undo step (a revert to a checkpoint).
     pub fn replace(&mut self, doc: Document) -> Result<(), EditError> {
         self.busy()?;
@@ -463,6 +481,20 @@ mod tests {
         assert_eq!(px(&ed, 500), [0, 0, 0, 255]);
         // Two edits on two tiles: the history keeps two tiles beyond the document, not two images.
         assert_eq!(ed.history_bytes(), 2 * (crate::TILE * crate::TILE * 4) as usize);
+    }
+
+    #[test]
+    fn looking_elsewhere_is_no_step_and_nothing_to_save() {
+        let mut ed = Editor::new(Document::new("t", 10, 10, None));
+        let rev = ed.revision();
+        ed.look(|d| {
+            d.active = None;
+            Ok(())
+        })
+        .unwrap();
+        assert!(ed.revision() > rev);
+        assert!(!ed.can_undo());
+        assert!(!ed.is_dirty());
     }
 
     #[test]

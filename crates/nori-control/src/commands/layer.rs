@@ -149,7 +149,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             }
             Ok(json!({ "layerId": id, "name": l.name, "visible": l.visible, "locked": l.locked, "opacity": l.opacity, "blend": l.blend.id(), "clipped": l.clipped }))
         }),
-        "layer.select" => s.edit(cx.label(), cx.source, None, |d| {
+        "layer.select" => s.look(|d| {
             let id = d.resolve(a.str("layerId")?)?;
             if let Some(p) = d.page_of(&id).map(|p| p.id.clone())
                 && p != d.active_page

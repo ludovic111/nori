@@ -433,6 +433,18 @@ impl Session {
         Ok(r)
     }
 
+    /// Changes what is being looked at (active layer, page shown) without an undo step
+    /// ([`Editor::look`]), then announces it.
+    pub fn look<R>(&self, f: impl FnOnce(&mut Document) -> Result<R, String>) -> CmdResult<R> {
+        let mut g = self.doc.lock();
+        let d = g.as_mut().ok_or(NO_DOCUMENT)?;
+        let r = d.editor.look(f).map_err(err)?;
+        let (id, rev) = (d.id, d.editor.revision());
+        drop(g);
+        self.emit(Event::DocChanged { doc_id: id, revision: rev });
+        Ok(r)
+    }
+
     /// Like [`edit`](Self::edit), but only if the document is still at `revision` (work done on
     /// a snapshot outside the lock lands only on the state it was computed from).
     pub fn edit_at<R>(&self, revision: u64, label: &str, source: Source, f: impl FnOnce(&mut Document) -> Result<R, String>) -> CmdResult<R> {

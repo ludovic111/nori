@@ -113,7 +113,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
             d.pages.insert(to, p);
             Ok(json!({ "order": d.pages.iter().map(|p| p.id.clone()).collect::<Vec<_>>() }))
         }),
-        "page.select" => s.edit(cx.label(), cx.source, None, |d| {
+        "page.select" => s.look(|d| {
             let r = d.resolve_page(a.str("page")?)?;
             let p = d.page_at(r).ok_or("no page")?;
             let id = p.id.clone();
