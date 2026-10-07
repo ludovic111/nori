@@ -361,8 +361,12 @@ impl Host {
                     }
                 }
                 let renamed = record.ok && matches!(record.command.as_str(), "doc.save" | "doc.setInfo");
-                // Commands of MCP clients and the CLI show as cards; the window's own don't.
-                if record.source != Source::Window {
+                // Changes MCP clients and the CLI make to the document show as cards; the
+                // window's own don't, nor what they only look at or do around the document.
+                let shown = record.mutates
+                    && !["ui.", "app.", "account.", "plugin."].iter().any(|p| record.command.starts_with(p))
+                    && !matches!(record.command.as_str(), "layer.select" | "page.select");
+                if record.source != Source::Window && shown {
                     st.command(record, None, None);
                 }
                 drop(st);
