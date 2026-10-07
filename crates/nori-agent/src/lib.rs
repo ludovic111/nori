@@ -51,7 +51,7 @@ pub use host::{ConversationInfo, Entry, Host, RunInfo, RunState, Snapshot};
 pub use models::{ModelInfo, ModelList, list as list_models};
 pub use providers::Group;
 pub use status::{AccountStatus, Action, KeyStatus, Next, ProviderStatus, provider_status, status_of};
-pub use tools::{RUN_TOOL, SYSTEM_PROMPT, TOOL_OUTPUT_LIMIT, ToolDef, ToolSet, tool_defs};
+pub use tools::{RUN_TOOL, TOOL_OUTPUT_LIMIT, ToolDef, ToolSet, system_prompt, tool_defs};
 
 /// Most model round trips in one run before it stops and says so.
 pub const MAX_STEPS: usize = 40;
@@ -248,6 +248,9 @@ pub enum Part {
     /// A picture a command showed the model (`call`: the tool call whose result it belongs to),
     /// base64-encoded. Kept after the results it belongs to, in the same message.
     Image { call: Option<String>, media_type: String, data: String },
+    /// The live context refreshed before a later model step (`<context>…</context>`), after the
+    /// tool results it follows. Not the person's words: never shown as a request.
+    Context { text: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -269,6 +272,12 @@ impl Message {
     pub fn text(&self) -> String {
         let texts: Vec<&str> = self.parts.iter().filter_map(|p| if let Part::Text { text } = p { Some(text.as_str()) } else { None }).collect();
         texts.join("\n\n")
+    }
+
+    /// The live context blocks refreshed into this message, joined.
+    pub fn context(&self) -> String {
+        let blocks: Vec<&str> = self.parts.iter().filter_map(|p| if let Part::Context { text } = p { Some(text.as_str()) } else { None }).collect();
+        blocks.join("\n\n")
     }
 }
 
@@ -303,7 +312,7 @@ impl Conversation {
     /// earlier thinking blocks are dropped with it so no block is replayed after a changed prefix.
     pub(crate) fn prepare_turn(&mut self) {
         if let Some(ai) = self.messages.iter().rposition(|m| m.role == Role::Assistant) {
-            let answers = self.messages.get(ai + 1).filter(|m| m.role == Role::User && m.parts.iter().all(|p| matches!(p, Part::ToolResult { .. } | Part::Image { .. })));
+            let answers = self.messages.get(ai + 1).filter(|m| m.role == Role::User && m.parts.iter().all(|p| matches!(p, Part::ToolResult { .. } | Part::Image { .. } | Part::Context { .. })));
             let has_answers = answers.is_some();
             let answered: Vec<&str> = answers.into_iter().flat_map(|m| &m.parts).filter_map(|p| if let Part::ToolResult { id, .. } = p { Some(id.as_str()) } else { None }).collect();
             let open: Vec<Part> = self.messages[ai]

@@ -1,0 +1,15 @@
+{
+  "name": "retouch",
+  "title": "Retouch a dark, flat, cold photo non-destructively",
+  "skill": "retouch-photo",
+  "files": [{ "path": "lake.png", "make": "dull-photo", "width": 1600, "height": 1067 }],
+  "setup": [{ "command": "doc.open", "params": { "path": "{dir}/lake.png" } }],
+  "prompt": "This landscape photo came out dark, flat and too blue. Retouch it so it looks natural, bright and warm, keeping the original pixels untouched so every change can be tuned later. Then export a JPEG to {out}/lake-retouched.jpg.",
+  "checks": [
+    { "check": "adjustments", "min": 2 },
+    { "check": "unchangedPixels" },
+    { "check": "brighter", "by": 15 },
+    { "check": "export", "path": "lake-retouched.jpg", "width": 1600, "height": 1067 },
+    { "check": "looked" }
+  ]
+}

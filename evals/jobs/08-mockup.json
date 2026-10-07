@@ -1,0 +1,16 @@
+{
+  "name": "mockup",
+  "title": "An app screen in a phone mockup",
+  "skill": "mockup",
+  "files": [{ "path": "design.png", "make": "app-screen", "width": 1080, "height": 1920 }],
+  "setup": [{ "command": "doc.new", "params": { "name": "Mockup", "width": 2400, "height": 1600, "background": "#e9e7e2" } }],
+  "prompt": "Make a mockup that shows the app screen at {dir}/design.png on a phone: draw a simple phone (rounded body, dark bezel, screen), put the design exactly into its screen (it must not spill over the bezel), and add a soft shadow under the phone. Export a PNG to {out}/mockup.png.",
+  "checks": [
+    { "check": "layers", "kind": "raster", "min": 1 },
+    { "check": "layers", "kind": "vector", "min": 2 },
+    { "check": "clippedOrMasked", "min": 1 },
+    { "check": "problems", "kinds": ["offPage", "pastEdge"] },
+    { "check": "export", "path": "mockup.png", "width": 2400, "height": 1600 },
+    { "check": "looked" }
+  ]
+}

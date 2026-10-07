@@ -30,8 +30,12 @@ Free and open source (MIT), written in Rust, in beta.
 - **Your agent.** The Agent panel (⌘J) runs **lsuite AI** (a demo for now: no payment is taken) or your own
   Claude Code, Codex, Anthropic or OpenAI key, or a model on Ollama. It works through the same
   commands as the window; each change is a step you can undo, and a run can be reverted at once.
-  `nori-mcp` gives every command to any MCP client; `nori-cli` to scripts. See
-  [docs/AI_CONTROL.md](docs/AI_CONTROL.md) and [docs/COMMANDS.md](docs/COMMANDS.md).
+  `nori-mcp` gives every command to any MCP client; `nori-cli` to scripts. Every agent gets
+  the same harness: a designer's brief, eleven skills (poster, retouch, logo, booklet, brand
+  kit…), a live view of the document before each step, and `harness.look` / `harness.check` to
+  see and measure the work (contrast, bleed, resolution, overflow) before it says it's done;
+  `evals/` scores it on real design jobs. See [docs/AI_CONTROL.md](docs/AI_CONTROL.md) and
+  [docs/COMMANDS.md](docs/COMMANDS.md).
 - **Plugins.** Filters written in Rust with the nori SDK (`crates/nori-plugin`) load without a
   restart. Describe one in Plugins › Build with your agent and the agent writes, builds and
   installs it. Two examples ship in `plugins/`: Duotone and Halftone.
@@ -70,8 +74,8 @@ XCF import supports 8-bit nonlinear RGB/grayscale, groups, masks and raw/RLE/zli
 
 Pressure size and flow controls are in the brush toolbar. macOS reads tablet pressure from the current native tablet event; actual tablet hardware still needs verification. Linux and Windows currently use full mouse pressure in the canvas because the pinned GUI backend does not expose tablet samples. The command API accepts pressure samples on every platform.
 
-Smart objects have **Edit contents**, **Replace contents**, width/height and **Rasterize** controls. Save the source tab and replace the contents to apply edits. Rotation/flipping and destructive pixel filters require rasterizing first; resizing and replacement retain the embedded original. Signed app updates are available in Settings → Updates, with checksums and signatures verified before installation.
+Smart objects have **Edit contents**, **Replace contents**, width/height and **Rasterize** controls. Save the source tab and replace the contents to apply edits. Rotation/flipping and destructive pixel filters require rasterizing first; resizing and replacement retain the embedded original. Signed app updates are available in Settings → Updates with your free lsuite account (signed in in the lsuite app), with checksums and signatures verified before installation.
 
 ## Release builds
 
-The suite workflow in `ludovic111/kimchi/.github/workflows/suite-build.yml` builds an exact nori commit for macOS ARM/Intel, Windows and Linux using the existing suite Apple signing account and nori’s separate update key. Upload all verified assets, `SHA256SUMS`, and the signed-asset `latest.json` to the nori release. The repository’s standalone release workflow is manual and refuses unsigned releases when credentials are missing.
+nori's builds come to people through the lsuite app (lsuite's DISTRIBUTION.md). The suite workflow in `ludovic111/kimchi/.github/workflows/suite-build.yml` builds and signs an exact nori commit for macOS ARM/Intel, Windows and Linux; `scripts/publish-build.sh <version> <run-id>` then checks every signature, writes `latest.json` and `SHA256SUMS`, and creates `nori-v<version>` in the private `ludovic111/lsuite-builds` (try `--dry-run` first). The repository's standalone release workflow is manual and refuses unsigned releases when credentials are missing.

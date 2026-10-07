@@ -1,0 +1,19 @@
+{
+  "name": "poster",
+  "title": "A3 event poster, exported as PDF",
+  "skill": "poster",
+  "prompt": "Make an A3 portrait poster for print for a jazz concert: \"Blue Hour Jazz\" — Friday 14 November, 8 pm, at The Blue Room, 12 Quay Street. Tickets £12 at the door. Give it a strong headline and a clear hierarchy, and export it as a PDF to {out}/poster.pdf.",
+  "checks": [
+    { "check": "pages", "min": 1, "max": 1 },
+    { "check": "pageSize", "width": 3508, "height": 4961 },
+    { "check": "text", "contains": "blue hour jazz" },
+    { "check": "text", "contains": "quay street" },
+    { "check": "text", "contains": "8 pm" },
+    { "check": "largestText", "minPx": 200 },
+    { "check": "fonts", "max": 3 },
+    { "check": "contrast" },
+    { "check": "problems", "kinds": ["offPage", "pastEdge", "overflow"] },
+    { "check": "export", "path": "poster.pdf", "minBytes": 2000 },
+    { "check": "looked" }
+  ]
+}

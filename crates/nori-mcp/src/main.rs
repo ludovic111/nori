@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use nori_cli::Backend;
-use nori_control::{Perm, Source, registry};
+use nori_control::{Perm, Source, harness, registry};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 
@@ -96,7 +96,7 @@ async fn main() {
     eprintln!("nori-mcp {}: {} mode{}", env!("CARGO_PKG_VERSION"), backend.mode(), backend.path().map(|p| format!(" on {}", p.display())).unwrap_or_default());
 
     let (out, writer) = protocol_out();
-    let server = Arc::new(Server { backend });
+    let server = Arc::new(Server { backend, context: Mutex::new(None) });
     // Requests in flight by id (as JSON text), to cancel them.
     let running: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>> = Arc::default();
     let mut stdin = tokio::io::BufReader::with_capacity(1 << 16, tokio::io::stdin());
@@ -264,6 +264,8 @@ fn exit_usage(message: &str) -> ! {
 
 struct Server {
     backend: Backend,
+    /// The last live context sent with a tool result: its `seq` and text.
+    context: Mutex<Option<(u64, String)>>,
 }
 
 /// A request (with an id) or a notification.
@@ -329,7 +331,7 @@ impl Server {
                     return Err((-32602, format!("Unknown tool `{name}`: the built-in agent doesn't drive itself")));
                 }
                 let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
-                Ok(match self.backend.call(spec.name, arguments).await {
+                let mut reply = match self.backend.call(spec.name, arguments).await {
                     Ok(result) => {
                         let mut text = serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string());
                         if spec.mutates
@@ -352,14 +354,36 @@ impl Server {
                         reply
                     }
                     Err(message) => json!({ "content": [{ "type": "text", "text": message }], "isError": true }),
-                })
+                };
+                // The live context, when the document changed since the last one sent.
+                if let Some(block) = self.context_update(spec.name).await
+                    && let Some(content) = reply["content"].as_array_mut()
+                {
+                    content.push(json!({ "type": "text", "text": block }));
+                }
+                Ok(reply)
             }
-            "resources/list" => Ok(json!({ "resources": RESOURCES.iter().map(|(uri, name, description, _)| json!({
-                "uri": uri, "name": name, "description": description, "mimeType": "application/json",
-            })).collect::<Vec<_>>() })),
-            "resources/templates/list" => Ok(json!({ "resourceTemplates": [] })),
+            "resources/list" => {
+                let mut list: Vec<Value> = RESOURCES.iter().map(|(uri, name, description, _)| json!({
+                    "uri": uri, "name": name, "description": description, "mimeType": if *uri == "nori://harness/brief" { "text/markdown" } else { "application/json" },
+                })).collect();
+                list.extend(harness::skills().iter().map(|k| json!({
+                    "uri": format!("nori://skills/{}", k.name), "name": k.title, "description": format!("Skill: {}", k.when), "mimeType": "text/markdown",
+                })));
+                Ok(json!({ "resources": list }))
+            }
+            "resources/templates/list" => Ok(json!({ "resourceTemplates": [{
+                "uriTemplate": "nori://skills/{name}", "name": "Skill", "description": "A playbook for a design job (harness_skills lists them).", "mimeType": "text/markdown",
+            }] })),
             "resources/read" => {
                 let uri = params.get("uri").and_then(Value::as_str).ok_or((-32602, "resources/read needs `uri`".to_string()))?;
+                if let Some(name) = uri.strip_prefix("nori://skills/") {
+                    let k = harness::skill(name).map_err(|e| (-32002, e))?;
+                    return Ok(json!({ "contents": [{ "uri": uri, "mimeType": "text/markdown", "text": k.markdown }] }));
+                }
+                if uri == "nori://harness/brief" {
+                    return Ok(json!({ "contents": [{ "uri": uri, "mimeType": "text/markdown", "text": harness::brief() }] }));
+                }
                 let command = RESOURCES.iter().find(|(u, ..)| *u == uri).map(|(.., c)| *c).ok_or((-32002, format!("Unknown resource `{uri}`")))?;
                 let value = self.backend.call(command, json!({})).await.map_err(|e| (-32000, e))?;
                 Ok(json!({ "contents": [{
@@ -368,26 +392,11 @@ impl Server {
                     "text": serde_json::to_string_pretty(&value).unwrap_or_default(),
                 }] }))
             }
-            "prompts/list" => Ok(json!({ "prompts": prompts::PROMPTS.iter().map(|p| json!({
-                "name": p.name,
-                "description": p.description,
-                "arguments": p.arguments.iter().map(|(name, description, required)| json!({
-                    "name": name, "description": description, "required": required,
-                })).collect::<Vec<_>>(),
-            })).collect::<Vec<_>>() })),
+            "prompts/list" => Ok(json!({ "prompts": prompts::list() })),
             "prompts/get" => {
                 let name = params.get("name").and_then(Value::as_str).ok_or((-32602, "prompts/get needs `name`".to_string()))?;
-                let prompt = prompts::PROMPTS.iter().find(|p| p.name == name).ok_or((-32602, format!("Unknown prompt `{name}`")))?;
                 let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
-                for (arg, _, required) in prompt.arguments {
-                    if *required && prompts::arg(&arguments, arg, "").is_empty() {
-                        return Err((-32602, format!("Prompt `{name}` needs `{arg}`")));
-                    }
-                }
-                Ok(json!({
-                    "description": prompt.description,
-                    "messages": [{ "role": "user", "content": { "type": "text", "text": (prompt.render)(&arguments) } }],
-                }))
+                prompts::get(name, &arguments).map_err(|e| (-32602, e))
             }
             "completion/complete" => Ok(json!({ "completion": { "values": [] } })),
             _ => Err((-32601, format!("Method not found: {method}"))),
@@ -396,26 +405,41 @@ impl Server {
 
     fn instructions(&self) -> String {
         let mode = match &self.backend {
-            Backend::Live { .. } => "Live mode: every tool runs in the open nori window. The person may be working at the same time; you share one undo history (history_undo undoes the last step, whoever made it).".to_string(),
+            Backend::Live { .. } => "nori-mcp, live mode: every tool runs in the open nori window. The person may be working at the same time; you share one undo history (history_undo undoes the last step, whoever made it).".to_string(),
             Backend::Local { file: Some(p), .. } => format!(
-                "File mode on {}: the document is saved after every change (a picture or PSD saves to the .nori beside it; export_file writes pictures). Commands that need the window (tools, zoom, panels) are unavailable.",
+                "nori-mcp, file mode on {}: the document is saved after every change (a picture or PSD saves to the .nori beside it; export_file writes pictures). Commands that need the window (tools, zoom, panels) are unavailable.",
                 p.display()
             ),
-            Backend::Local { .. } => "Headless mode (the app isn't running): doc_open or doc_new first; export_file to write results. Commands that need the window are unavailable.".into(),
+            Backend::Local { .. } => "nori-mcp, headless mode (the app isn't running): doc_open or doc_new first; export_file to write results. Commands that need the window are unavailable.".into(),
         };
-        format!(
-            "nori is lsuite's editor for pictures, drawings and pages in one app: photos and painting (pixels, adjustment layers, filters, masks), vectors (shapes, Bézier paths, gradients, path operations) and layout (pages, master pages, text frames that flow across pages, styles, PDF). {mode}\n\
-             Start with doc_overview (also the resource nori://doc/overview): pages, every layer as a tree with bounds, text and shape summaries, styles, colours, history and problems (text that overflows). Drill down with layer_get, layer_list, page_list.\n\
-             Conventions: positions are pixels on the page, x right and y down from its top-left corner; layer ids (L12) and unique names both work; pages by id, name or number from 1; a near miss answers with \"did you mean\". Every edit is one undo step; doc_batch runs several commands as one step and rolls back on failure.\n\
-             Making things: text_add (point text, or a frame with frameWidth/frameHeight; text_thread flows words to another frame), vector_addShape and vector_addPath (fill and stroke take colours or gradients), layer_place (photos, SVGs), layer_addAdjustment, filter_apply, raster_stroke (paint), select_* then fill or filter inside the selection, layer_align for layout.\n\
-             Seeing: page_look and layer_look return the picture itself as image content along with its path. Look at what you made before calling it done.\n\
-             export_file writes PNG, JPEG, WebP, TIFF, OpenRaster, SVG or PDF. Agent permissions (Settings › Agent › Permissions) decide whether you may open and write files, change settings, build plugins or control the app; API keys, the lsuite sign-in and the permissions stay with the person."
-        )
+        let permissions = "Agent permissions (Settings › Agent › Permissions) decide whether you may open and write files, change settings, build plugins or control the app; API keys, the lsuite sign-in and the permissions stay with the person.";
+        format!("{}\n\n{permissions}", harness::mcp_instructions(&mode))
+    }
+
+    /// The live context to append to a tool result: the new block when the document changed
+    /// since the last one sent (`NORI_MCP_CONTEXT=0` turns it off).
+    async fn context_update(&self, command: &str) -> Option<String> {
+        if std::env::var("NORI_MCP_CONTEXT").is_ok_and(|v| v == "0") || command.starts_with("harness.") || command == "app.commands" {
+            return None;
+        }
+        let since = self.context.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|(seq, _)| *seq);
+        let mut params = json!({ "exclude": "mcp" });
+        if let Some(seq) = since {
+            params["since"] = json!(seq);
+        }
+        let now = self.backend.call("harness.context", params).await.ok()?;
+        let (seq, text) = (now["seq"].as_u64().unwrap_or(0), now["text"].as_str().unwrap_or("").to_string());
+        let mut last = self.context.lock().unwrap_or_else(|e| e.into_inner());
+        let changed = last.as_ref().is_none_or(|(_, t)| *t != text);
+        *last = Some((seq, text.clone()));
+        (changed && !text.is_empty()).then(|| format!("<context>\n{text}\n</context>"))
     }
 }
 
 /// Registry-backed resources: uri, name, description, command.
-const RESOURCES: [(&str, &str, &str, &str); 5] = [
+const RESOURCES: [(&str, &str, &str, &str); 7] = [
+    ("nori://harness/brief", "Expert brief", "How a senior designer works in nori: the quality bar, the commands for the common jobs, the usual mistakes, the finish routine, the skills.", "harness.brief"),
+    ("nori://harness/context", "Live context", "What nori shows now: the page and its grid, its layers, the active layer, the selection, quick problems.", "harness.context"),
     ("nori://doc/overview", "Document overview", "Read it first: the whole open document in one bounded answer, with problems to notice.", "doc.overview"),
     ("nori://doc", "Open document", "The complete open document as JSON (document.json of the .nori format).", "doc.get"),
     ("nori://commands", "Commands", "Every command with its parameters, permission and whether it needs the window.", "app.commands"),

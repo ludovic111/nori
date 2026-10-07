@@ -7,19 +7,28 @@ use serde_json::{Value, json};
 use crate::registry::call;
 use crate::session::{Session, SessionOptions, Source};
 
-/// A scratch `LSUITE_HOME` for the whole test run (set once: the environment is shared).
-fn home() -> &'static std::path::Path {
+/// A scratch `LSUITE_HOME` for the whole test run (set once: the environment is shared), so no
+/// test reads the account of the person running them, nor their update overrides.
+pub(crate) fn home() -> &'static std::path::Path {
     static HOME: OnceLock<tempfile::TempDir> = OnceLock::new();
     HOME.get_or_init(|| {
         let d = tempfile::tempdir().unwrap();
-        unsafe { std::env::set_var("LSUITE_HOME", d.path()) };
-        unsafe { std::env::set_var("NORI_NO_SYSTEM_FONTS", "1") };
+        // SAFETY: set once, before any test reads them.
+        unsafe {
+            std::env::set_var("LSUITE_HOME", d.path());
+            std::env::set_var("NORI_NO_SYSTEM_FONTS", "1");
+            std::env::remove_var("LSUITE_ACCOUNT_SERVER");
+            std::env::remove_var("NORI_UPDATE_URL");
+        }
         d
     })
     .path()
 }
 
-fn session() -> (Arc<Session>, tempfile::TempDir) {
+/// Tests that sign in or out of lsuite take turns (one account file for the run).
+pub(crate) static ACCOUNT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+pub(crate) fn session() -> (Arc<Session>, tempfile::TempDir) {
     home();
     let dir = tempfile::tempdir().unwrap();
     let s = Session::new(SessionOptions { data_dir: Some(dir.path().join("data")), config_dir: Some(dir.path().join("config")), secrets: None, headless: true }).unwrap();
@@ -242,4 +251,78 @@ async fn background_edits_reject_a_different_tab_with_the_same_revision() {
     ok(&s,"doc.new",json!({"width":16,"height":16})).await;
     assert!(s.edit_at(id,rev,"old render",Source::Cli,|d|{d.name="WRONG".into();Ok(())}).is_err());
     assert_ne!(s.document().unwrap().name,"WRONG");
+}
+
+// ---- the agent harness ----------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_harness_measures_contrast_bounds_and_bleed() {
+    let (s, _dir) = session();
+    ok(&s, "doc.new", json!({ "name": "Flyer", "preset": "a5", "margins": 120 })).await;
+    // Pale grey on white: unreadable. Black: fine. A title running off the right edge.
+    ok(&s, "text.add", json!({ "text": "Barely there", "x": 150, "y": 200, "size": 60, "color": "#dddddd", "name": "Pale" })).await;
+    ok(&s, "text.add", json!({ "text": "Easy to read", "x": 150, "y": 400, "size": 60, "color": "#111111", "name": "Dark" })).await;
+    ok(&s, "text.add", json!({ "text": "RUNS OFF THE EDGE", "x": 1200, "y": 700, "size": 200, "weight": 800, "color": "#000000", "name": "Wide" })).await;
+    // A band touching the left edge, on a print page with no bleed.
+    ok(&s, "vector.addShape", json!({ "shape": "rect", "x": 0, "y": 1800, "width": 900, "height": 200, "fill": "#0b3954", "name": "Band" })).await;
+    let r = ok(&s, "harness.check", json!({})).await;
+    let page = &r["pages"][0];
+    let kinds: Vec<&str> = page["problems"].as_array().unwrap().iter().filter_map(|p| p["kind"].as_str()).collect();
+    assert!(kinds.contains(&"contrast") && kinds.contains(&"pastEdge") && kinds.contains(&"noBleed"), "{kinds:?}");
+    assert_eq!(r["ok"], false);
+    let contrast = page["contrast"].as_array().unwrap();
+    let pale = contrast.iter().find(|c| c["name"] == "Pale").unwrap();
+    let dark = contrast.iter().find(|c| c["name"] == "Dark").unwrap();
+    assert!(pale["ratio"].as_f64().unwrap() < 1.6 && pale["ok"] == false, "{pale}");
+    assert!(dark["ratio"].as_f64().unwrap() > 15.0 && dark["ok"] == true, "{dark}");
+    assert_eq!(page["print"], true);
+
+    // Fixed: darker text, the title inside, a bleed the band reaches.
+    ok(&s, "text.update", json!({ "layerId": "Pale", "color": "#333333" })).await;
+    ok(&s, "layer.delete", json!({ "layerIds": ["Wide"] })).await;
+    ok(&s, "page.update", json!({ "bleed": 35 })).await;
+    let r = ok(&s, "harness.check", json!({})).await;
+    let kinds: Vec<String> = r["pages"][0]["problems"].as_array().unwrap().iter().map(|p| p["kind"].as_str().unwrap().to_string()).collect();
+    assert!(kinds.contains(&"shortOfBleed".to_string()) && !kinds.contains(&"contrast".to_string()), "{kinds:?}");
+    ok(&s, "vector.setGeometry", json!({ "layerId": "Band", "geometry": { "type": "rect", "x": -35, "y": 1800, "w": 935, "h": 200 } })).await;
+    let r = ok(&s, "harness.check", json!({})).await;
+    assert_eq!(r["errors"], 0, "{r}");
+    assert_eq!(r["warnings"], 0, "{r}");
+
+    // The look is a picture with the same numbers.
+    let look = ok(&s, "harness.look", json!({ "width": 300 })).await;
+    assert!(std::path::Path::new(look["path"].as_str().unwrap()).is_file());
+    assert_eq!(look["checks"]["errors"], 0);
+    assert_eq!(crate::vision::pictures_in("harness.look", &look).len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_live_context_tells_what_others_changed() {
+    let (s, _dir) = session();
+    ok(&s, "doc.new", json!({ "name": "Poster", "width": 800, "height": 600 })).await;
+    let first = call(&s, Source::Agent, "harness.context", json!({})).await.unwrap();
+    let seq = first["seq"].as_u64().unwrap();
+    assert!(first["text"].as_str().unwrap().contains("Document \"Poster\""), "{first}");
+    // The agent's own edit isn't reported back to it; the person's is.
+    call(&s, Source::Agent, "text.add", json!({ "text": "Mine", "x": 10, "y": 10, "name": "Mine" })).await.unwrap();
+    call(&s, Source::Window, "text.add", json!({ "text": "Theirs", "x": 10, "y": 100, "name": "Theirs" })).await.unwrap();
+    let next = call(&s, Source::Agent, "harness.context", json!({ "since": seq })).await.unwrap();
+    let text = next["text"].as_str().unwrap();
+    assert!(text.contains("the person ran text.add"), "{text}");
+    assert_eq!(next["changes"].as_array().unwrap().len(), 1, "{next}");
+    assert!(text.contains("\"Theirs\"") && text.contains("\"Mine\""), "both layers are listed: {text}");
+    // Reading the context is no card of its own.
+    assert!(next["seq"].as_u64().unwrap() > seq);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_brief_and_skills_are_commands() {
+    let (s, _dir) = session();
+    let b = ok(&s, "harness.brief", json!({})).await;
+    assert!(b["words"].as_u64().unwrap() >= 800);
+    let list = ok(&s, "harness.skills", json!({})).await;
+    assert!(list["skills"].as_array().unwrap().len() >= 8);
+    let k = ok(&s, "harness.skill", json!({ "name": "booklet" })).await;
+    assert!(k["markdown"].as_str().unwrap().contains("text_thread"));
+    assert!(call(&s, Source::Agent, "harness.skill", json!({ "name": "bookle" })).await.unwrap_err().contains("`booklet`"));
 }

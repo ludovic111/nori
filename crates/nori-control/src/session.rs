@@ -110,6 +110,21 @@ pub struct CommandRecord {
     pub checkpoint: Option<u64>,
 }
 
+/// Changes kept for the live context.
+pub const RECENT_CHANGES: usize = 64;
+
+/// One change a client made to the document, as the live context reports it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Change {
+    pub seq: u64,
+    pub source: Source,
+    pub command: String,
+    /// The layers it named or made.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<String>,
+}
+
 /// What the window shows. `ui.state` returns it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -207,6 +222,10 @@ pub struct Session {
     next_doc: AtomicU64,
     runtime: tokio::runtime::Handle,
     pub(crate) bridge_port: Mutex<Option<u16>>,
+    /// The control file the bridge wrote (`control.json`, or another path for a private bridge).
+    pub(crate) bridge_control: Mutex<Option<PathBuf>>,
+    /// The latest changes any client made, newest last (the live context's "since your last step").
+    recent: Mutex<std::collections::VecDeque<Change>>,
     pub(crate) batch_lock: Arc<tokio::sync::Mutex<()>>,
     pub colors: RwLock<Colors>,
     pub brushes: RwLock<Vec<Arc<nori_render::brush::TipImage>>>,
@@ -244,6 +263,8 @@ impl Session {
             next_doc: AtomicU64::new(1),
             runtime: tokio::runtime::Handle::current(),
             bridge_port: Mutex::new(None),
+            bridge_control: Mutex::new(None),
+            recent: Mutex::new(std::collections::VecDeque::new()),
             batch_lock: Arc::new(tokio::sync::Mutex::new(())),
             colors: RwLock::new(Colors::default()),
             brushes: RwLock::new(vec![]),
@@ -276,6 +297,25 @@ impl Session {
 
     pub(crate) fn next_seq(&self) -> u64 {
         self.seq.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// The sequence number of the latest command any client ran (0 before the first).
+    pub fn last_seq(&self) -> u64 {
+        self.seq.load(Ordering::Relaxed).saturating_sub(1)
+    }
+
+    /// Remembers a change for the live context (the last [`RECENT_CHANGES`]).
+    pub(crate) fn note_change(&self, change: Change) {
+        let mut r = self.recent.lock();
+        r.push_back(change);
+        while r.len() > RECENT_CHANGES {
+            r.pop_front();
+        }
+    }
+
+    /// The changes made after `seq`, oldest first (only the last [`RECENT_CHANGES`] are kept).
+    pub fn changes_since(&self, seq: u64) -> Vec<Change> {
+        self.recent.lock().iter().filter(|c| c.seq > seq).cloned().collect()
     }
 
     // ---- settings ---------------------------------------------------------------------------
@@ -569,6 +609,11 @@ impl Session {
 
     pub fn bridge_port(&self) -> Option<u16> {
         *self.bridge_port.lock()
+    }
+
+    /// The control file of this session's bridge, when it runs (what `nori-mcp --live` reads).
+    pub fn bridge_control(&self) -> Option<PathBuf> {
+        self.bridge_control.lock().clone()
     }
 
     /// Batches: everything until `end` is one undo step (`doc.batch`).

@@ -739,6 +739,7 @@ fn update_controls(cx: &App) -> AnyElement {
     let s = store.read(cx);
     let status = nori_control::update::status(&s.session);
     let message = if let Some(error) = &status.error { error.clone() }
+        else if let Some(sign_in) = &status.sign_in { sign_in.clone() }
         else if status.ready { "Update installed. Restart to use it.".into() }
         else if let Some(p) = status.progress { format!("Downloading and verifying: {:.0}%", p * 100.) }
         else if let Some(version) = &status.available { format!("nori {version} is available.") }
@@ -752,7 +753,11 @@ fn update_controls(cx: &App) -> AnyElement {
             .child(Button::new("check-updates-now", "Check now").small().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("app.checkUpdates", json!({}), cx))))
             .when(status.can_install && status.progress.is_none() && !status.ready, |d| d.child(Button::new("install-update", "Install update").small().primary().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("app.installUpdate", json!({}), cx)))))
             .when(status.ready, |d| d.child(Button::new("restart-update", "Restart nori").small().primary().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("app.restart", json!({}), cx)))))
-            .when(status.available.is_some() && !status.can_install && !status.ready, |d| d.child(Button::new("download-update", "Open downloads").small().on_click(|_, _, cx| cx.open_url("https://lsuite.xyz/nori/download")))))
+            .when((status.available.is_some() || status.sign_in.is_some()) && !status.can_install && !status.ready, |d| {
+                let url = status.download_url.clone().unwrap_or_else(|| nori_control::update::manifest_source().downloads());
+                let label = if status.sign_in.is_some() { "Open the lsuite app" } else { "Get the update" };
+                d.child(Button::new("download-update", label).small().on_click(move |_, _, cx| cx.open_url(&url)))
+            }))
         .children(status.install_blocked.map(|message| div().text_size(px(sz::SM)).child(message)))
         .into_any_element()
 }

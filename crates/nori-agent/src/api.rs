@@ -169,10 +169,24 @@ pub(crate) async fn run(run: &mut Run, prompt: String, mut conv: Conversation) -
     let (limit, compact) = tool_budget(api.wire);
     let tools = ToolSet::new(limit, compact);
     conv.prepare_turn();
-    conv.messages.push(Message::user(crate::context::glance(&run.session).frame(&prompt)));
+    let first = crate::context::glance(&run.session);
+    let (mut seen, mut seq) = (first.text(), first.seq);
+    conv.messages.push(Message::user(first.frame(&prompt)));
     run.set_conversation(&conv);
     let steps = run.config.max_steps.max(1);
     for round in 0..steps {
+        // The live context before every step: what changed since the last one (the agent's own
+        // edits, and the person's in the window), when anything did.
+        if round > 0 {
+            let now = crate::context::refresh(&run.session, seq, nori_control::Source::Agent);
+            seq = now.seq;
+            if now.text() != seen
+                && let Some(last) = conv.messages.last_mut().filter(|m| m.role == Role::User)
+            {
+                seen = now.text();
+                last.parts.push(Part::Context { text: now.block() });
+            }
+        }
         run.status(format!("Thinking with {}…", api.model));
         run.break_text();
         let Step { parts, calls } = api.step(run, &tools, &conv.messages, round).await?;

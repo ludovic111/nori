@@ -1,6 +1,14 @@
-//! Automatic updates from this repository's GitHub Releases.
+//! Automatic updates, through lsuite (lsuite's DISTRIBUTION.md): the builds come from the lsuite
+//! server with the person's free lsuite account, as for every lsuite app.
 //!
-//! Every release carries a signed `latest.json` manifest:
+//! The check reads `<server>/api/apps/nori/latest.json` with `Authorization: Bearer <token>` (the
+//! token of `~/.lsuite/account.json`, `LSUITE_HOME` replacing `~/.lsuite`; `<server>` is
+//! `LSUITE_ACCOUNT_SERVER`, else the account's server, else <https://lsuite.xyz>). Signed out, the
+//! check doesn't fail: its status says "Sign in to lsuite (in the lsuite app) to get updates". The
+//! server serves the release's own signed `latest.json` with every `url` on its file route
+//! (`/api/apps/nori/files/<tag>/<name>`, a redirect to a short-lived download address), so files
+//! on the server are downloaded with the token too (never sent to another host: redirects to
+//! another host drop it). The manifest:
 //!
 //! ```json
 //! { "version": "0.2.0", "notes": "…", "pub_date": "…",
@@ -8,9 +16,10 @@
 //! ```
 //!
 //! Each archive is signed with the project's minisign (Ed25519) update key, the same key the Tauri
-//! builds trust ([`PUBLIC_KEY`]), and verified while it downloads, before anything is replaced. The
-//! signature's trusted comment carries the version it was made for, which must match the
-//! announced one, so an old signed archive can't be passed off as a new release.
+//! builds trust ([`PUBLIC_KEY`]), and verified while it downloads, before anything is replaced: the
+//! server can't alter a build unnoticed. The signature's trusted comment carries the version it
+//! was made for, which must match the announced one, so an old signed archive can't be passed off
+//! as a new release.
 //!
 //! What gets replaced, and how:
 //! * **macOS**: the running `nori.app` is moved aside to `.nori.app.previous` next to it and the
@@ -20,14 +29,15 @@
 //!   installer is downloaded and verified, then run passively once nori has exited, when it
 //!   restarts ([`restart`]) or quits ([`apply_on_quit`]).
 //! * **Portable Windows copies, Linux packages, development builds**: the update is announced with
-//!   `can_install: false` and the file to download by hand (`download_url`): the portable zip
-//!   (`windows-x86_64-portable`) or the `.deb` (`linux-x86_64-deb`), else the release page.
+//!   `can_install: false` and where to get it (`download_url`): the lsuite app's page for builds on
+//!   the lsuite server, else the platform's file.
 //!
 //! `NORI_NO_UPDATE=1` or `settings.updates.checkOnStart = false` turn off the checks at start and
 //! every [`RECHECK`] ([`run_in_background`], which also installs by itself with
 //! `updates.autoInstall`); `app.checkUpdates` and `app.installUpdate` always work. `NORI_UPDATE_URL`
-//! points the check at another `latest.json` (signatures are still checked against [`PUBLIC_KEY`];
-//! debug builds accept `NORI_UPDATE_PUBKEY` instead, for testing with a throwaway key).
+//! points the check at another `latest.json` without an account (tests; signatures are still
+//! checked against [`PUBLIC_KEY`]; debug builds accept `NORI_UPDATE_PUBKEY` instead, for testing
+//! with a throwaway key).
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -43,10 +53,10 @@ use tokio::io::AsyncWriteExt;
 
 use crate::session::{CmdResult, Event, Session, ToastKind};
 
-/// The release manifest of the latest published release.
-pub const MANIFEST_URL: &str = "https://github.com/ludovic111/nori/releases/latest/download/latest.json";
-/// Where people download nori by hand.
-pub const RELEASES_URL: &str = "https://github.com/ludovic111/nori/releases/latest";
+/// The manifest's path on the lsuite server.
+pub const MANIFEST_PATH: &str = "/api/apps/nori/latest.json";
+/// What a signed-out check says.
+pub const SIGN_IN: &str = "Sign in to lsuite (in the lsuite app) to get updates.";
 /// This app's release public key. Its secret half stays in the release signing environment.
 pub const PUBLIC_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM5NTY4RDlBRDU2M0MzRjQKUldUMHcyUFZtbzFXeVM0ZkcyaHpzWDBDYTgxNWd4eTRZRVAvdWQxcnl0c1QvRTNRUkVmbmpYbHoK";
 /// This build's version.
@@ -84,6 +94,10 @@ pub struct UpdateStatus {
     /// from the source tree, an app still in Downloads…).
     #[serde(default)]
     pub install_blocked: Option<String>,
+    /// Updates come with a free lsuite account: set (to [`SIGN_IN`]) when nobody is signed in on
+    /// this computer, or the server refused the account's token.
+    #[serde(default)]
+    pub sign_in: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -100,6 +114,8 @@ struct Found {
     version: String,
     url: String,
     signature: String,
+    /// The account's token, for files on the lsuite server.
+    token: Option<String>,
 }
 
 /// `latest.json`, in the Tauri updater's format.
@@ -147,7 +163,11 @@ pub async fn check(s: &Arc<Session>, manual: bool) -> CmdResult<UpdateStatus> {
             return Ok(u.status.clone());
         }
     }
-    let fetched = fetch_manifest(&manifest_url()).await;
+    let source = manifest_source();
+    let fetched = match &source.token {
+        None if source.needs_account => Err(Fetch::SignedOut),
+        token => fetch_manifest(&source.url, token.as_deref()).await,
+    };
     let install = current_install();
     let status = {
         let mut u = s.update.lock();
@@ -160,7 +180,8 @@ pub async fn check(s: &Arc<Session>, manual: bool) -> CmdResult<UpdateStatus> {
                 let newer = is_newer(&m.version, CURRENT);
                 let asset = select(m, &platform_keys_for(&install)).filter(|_| newer);
                 let blocked = install_support(&install).err();
-                u.found = asset.map(|a| Found { version: m.version.clone(), url: a.url.clone(), signature: a.signature.clone() });
+                let token = source.token_for(asset.map(|a| a.url.as_str()).unwrap_or(""));
+                u.found = asset.map(|a| Found { version: m.version.clone(), url: a.url.clone(), signature: a.signature.clone(), token });
                 u.status = UpdateStatus {
                     current: CURRENT.into(),
                     available: newer.then(|| m.version.clone()),
@@ -170,14 +191,20 @@ pub async fn check(s: &Arc<Session>, manual: bool) -> CmdResult<UpdateStatus> {
                     error: None,
                     can_install: asset.is_some() && blocked.is_none(),
                     checked_at: now,
-                    download_url: newer.then(|| asset.map_or(RELEASES_URL.to_string(), |a| a.url.clone())),
+                    download_url: newer.then(|| asset.filter(|a| !source.on_server(&a.url)).map_or_else(|| source.downloads(), |a| a.url.clone())),
                     install_blocked: if newer { blocked } else { None },
+                    sign_in: None,
                 };
             }
-            Err(e) => {
+            Err(Fetch::SignedOut) => {
+                u.found = None;
+                u.status = UpdateStatus { current: CURRENT.into(), checked_at: now, sign_in: Some(SIGN_IN.into()), download_url: Some(source.downloads()), ..Default::default() };
+            }
+            Err(Fetch::Failed(e)) => {
                 tracing::debug!("update check failed: {e}");
                 u.status.current = CURRENT.into();
                 u.status.checked_at = now;
+                u.status.sign_in = None;
                 u.status.error = manual.then(|| e.clone());
             }
         }
@@ -185,7 +212,7 @@ pub async fn check(s: &Arc<Session>, manual: bool) -> CmdResult<UpdateStatus> {
     };
     s.emit(Event::Update { status: status.clone() });
     match fetched {
-        Err(e) if manual => Err(e),
+        Err(Fetch::Failed(e)) if manual => Err(e),
         _ => Ok(status),
     }
 }
@@ -229,8 +256,52 @@ pub fn status(s: &Session) -> UpdateStatus {
     st
 }
 
-fn manifest_url() -> String {
-    std::env::var("NORI_UPDATE_URL").ok().filter(|u| !u.trim().is_empty()).unwrap_or_else(|| MANIFEST_URL.into())
+/// Where the check reads the manifest, and with which token.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ManifestSource {
+    pub url: String,
+    /// The lsuite server (`https://lsuite.xyz`), without a trailing slash.
+    pub server: String,
+    /// The lsuite account's token, when someone is signed in.
+    pub token: Option<String>,
+    /// The lsuite server only serves builds to an account (false for `NORI_UPDATE_URL`).
+    pub needs_account: bool,
+}
+
+impl ManifestSource {
+    /// Whether `url` is on the lsuite server (and so is fetched with the token).
+    pub fn on_server(&self, url: &str) -> bool {
+        let origin = |u: &str| url::Url::parse(u).ok().map(|u| (u.scheme().to_string(), u.host_str().map(str::to_ascii_lowercase), u.port_or_known_default()));
+        self.needs_account && origin(url).is_some() && origin(url) == origin(&self.server)
+    }
+
+    /// The token to send with `url`: only to the lsuite server.
+    pub fn token_for(&self, url: &str) -> Option<String> {
+        self.token.clone().filter(|_| self.on_server(url))
+    }
+
+    /// Where a person gets nori by hand: the lsuite app.
+    pub fn downloads(&self) -> String {
+        format!("{}/launcher", self.server)
+    }
+}
+
+/// `NORI_UPDATE_URL` (no account), else `<server>/api/apps/nori/latest.json` with the account.
+pub fn manifest_source() -> ManifestSource {
+    let server = crate::account::server();
+    if let Some(url) = std::env::var("NORI_UPDATE_URL").ok().filter(|u| !u.trim().is_empty()) {
+        return ManifestSource { url: url.trim().to_string(), server, token: None, needs_account: false };
+    }
+    let token = crate::account::read().map(|a| a.token).filter(|t| !t.trim().is_empty());
+    ManifestSource { url: format!("{server}{MANIFEST_PATH}"), server, token, needs_account: true }
+}
+
+/// Why a check found nothing.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Fetch {
+    /// No lsuite account on this computer, or the server refused its token.
+    SignedOut,
+    Failed(String),
 }
 
 /// The update key. Debug builds take `NORI_UPDATE_PUBKEY` (base64) to test a release signed with
@@ -251,17 +322,23 @@ fn client(timeout: Option<Duration>) -> Result<reqwest::Client, String> {
     b.build().map_err(|e| e.to_string())
 }
 
-async fn fetch_manifest(url: &str) -> Result<Manifest, String> {
-    let offline = |e: reqwest::Error| format!("Couldn't reach GitHub to check for updates ({e}).");
-    let res = client(Some(Duration::from_secs(30)))?.get(url).send().await.map_err(offline)?;
-    if res.status() == reqwest::StatusCode::NOT_FOUND {
-        return Err("No nori release with an update manifest has been published yet.".into());
+/// Reads `latest.json` at `url`, with the account's token when there is one.
+pub async fn fetch_manifest(url: &str, token: Option<&str>) -> Result<Manifest, Fetch> {
+    let host = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_else(|| "the update server".into());
+    let offline = |e: reqwest::Error| Fetch::Failed(format!("Couldn't reach {host} to check for updates ({e})."));
+    let mut req = client(Some(Duration::from_secs(30))).map_err(Fetch::Failed)?.get(url).header(reqwest::header::ACCEPT, "application/json");
+    if let Some(t) = token {
+        req = req.bearer_auth(t);
     }
-    if !res.status().is_success() {
-        return Err(format!("GitHub answered {} to the update check.", res.status()));
+    let res = req.send().await.map_err(offline)?;
+    match res.status() {
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN if token.is_some() || url.contains(MANIFEST_PATH) => return Err(Fetch::SignedOut),
+        reqwest::StatusCode::NOT_FOUND => return Err(Fetch::Failed("No nori release with an update manifest has been published yet.".into())),
+        st if !st.is_success() => return Err(Fetch::Failed(format!("{host} answered {st} to the update check."))),
+        _ => {}
     }
     let bytes = res.bytes().await.map_err(offline)?;
-    serde_json::from_slice(&bytes).map_err(|e| format!("The update manifest isn't valid: {e}"))
+    serde_json::from_slice(&bytes).map_err(|e| Fetch::Failed(format!("The update manifest isn't valid: {e}")))
 }
 
 /// Whether `candidate` is a newer version than `current` (semver; a leading `v` is allowed).
@@ -385,12 +462,12 @@ pub async fn install(s: &Arc<Session>) -> CmdResult<UpdateStatus> {
         }
         let Some(found) = u.found.clone() else {
             return Err(match &u.status.available {
-                Some(v) => format!("nori {v} has no download for this platform yet. See {RELEASES_URL}"),
+                Some(v) => format!("nori {v} has no download for this platform yet. Get it in the lsuite app: {}", manifest_source().downloads()),
                 None => format!("nori {CURRENT} is up to date."),
             });
         };
         if let Err(why) = install_support(&install) {
-            return Err(format!("{why} Download nori {} from {}", found.version, u.status.download_url.as_deref().unwrap_or(RELEASES_URL)));
+            return Err(format!("{why} Get nori {} in the lsuite app ({}).", found.version, u.status.download_url.clone().unwrap_or_else(|| manifest_source().downloads())));
         }
         u.busy = true;
         u.status.progress = Some(0.0);
@@ -468,16 +545,29 @@ async fn download_and_install(s: &Arc<Session>, found: &Found, install: &Install
 
 /// Streams the archive to `file`, hashing it as it arrives, and checks the signature.
 async fn download_verified(s: &Arc<Session>, found: &Found, file: &Path) -> Result<(), String> {
-    let pk = decode_key(&public_key())?;
+    download_verified_with(s, found, file, &public_key()).await
+}
+
+async fn download_verified_with(s: &Arc<Session>, found: &Found, file: &Path, public_key_b64: &str) -> Result<(), String> {
+    let pk = decode_key(public_key_b64)?;
     let sig = decode_signature(&found.signature)?;
     // Check the signature's version before spending the bandwidth.
     check_signed_version(&sig, &found.version)?;
     let mut verifier = pk.verify_stream(&sig).map_err(signature_error)?;
 
     let failed = |e: reqwest::Error| format!("The download failed ({e}).");
-    let res = client(None)?.get(&found.url).header(reqwest::header::ACCEPT, "application/octet-stream").send().await.map_err(failed)?;
+    // The token goes to the lsuite server's file route only; its redirect to the file's
+    // short-lived address is on another host, which never gets it (reqwest drops it).
+    let mut req = client(None)?.get(&found.url).header(reqwest::header::ACCEPT, "application/octet-stream");
+    if let Some(t) = &found.token {
+        req = req.bearer_auth(t);
+    }
+    let res = req.send().await.map_err(failed)?;
+    if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err(SIGN_IN.into());
+    }
     if !res.status().is_success() {
-        return Err(format!("The download failed: GitHub answered {}.", res.status()));
+        return Err(format!("The download failed: the server answered {}.", res.status()));
     }
     let total = res.content_length().filter(|&n| n > 0);
     if total.is_some_and(|n| n > MAX_DOWNLOAD) {
@@ -980,5 +1070,123 @@ mod tests {
         assert_eq!(std::fs::read(&appimage).unwrap(), b"new");
         assert_eq!(std::fs::read(dir.path().join(".nori.AppImage.previous")).unwrap(), b"old");
         assert_eq!(cleanup_beside(&appimage).len(), 1);
+    }
+
+    // ---- through lsuite (DISTRIBUTION.md), against a fake lsuite server ----------------------
+
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn signed_in(server: &str, token: &str) {
+        crate::tests::home();
+        crate::account::write(&crate::account::Account { format: 1, server: server.into(), email: "ada@example.com".into(), token: token.into(), ..Default::default() }).unwrap();
+    }
+
+    fn release(server: &str) -> serde_json::Value {
+        let file = |name: &str| serde_json::json!({ "signature": "c2ln", "url": format!("{server}/api/apps/nori/files/nori-v99.0.0/{name}") });
+        serde_json::json!({ "version": "99.0.0", "notes": "Everything", "platforms": {
+            "linux-x86_64": file("nori_amd64.AppImage"), "darwin-aarch64": file("nori_aarch64.app.tar.gz"),
+            "darwin-x86_64": file("nori_x64.app.tar.gz"), "windows-x86_64": file("nori_x64-setup.exe"),
+        } })
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn signed_out_the_check_asks_to_sign_in_without_asking_the_server() {
+        let _turn = crate::tests::ACCOUNT.lock().await;
+        crate::tests::home();
+        crate::account::remove();
+        let server = MockServer::start().await;
+        // SAFETY: under the ACCOUNT lock; only these tests read it.
+        unsafe { std::env::set_var("LSUITE_ACCOUNT_SERVER", server.uri()) };
+        let (s, _dir) = crate::tests::session();
+        let st = check(&s, true).await.unwrap();
+        unsafe { std::env::remove_var("LSUITE_ACCOUNT_SERVER") };
+        assert_eq!(st.sign_in.as_deref(), Some(SIGN_IN));
+        assert!(st.error.is_none() && st.available.is_none());
+        assert_eq!(st.download_url, Some(format!("{}/launcher", server.uri())));
+        assert!(server.received_requests().await.unwrap().is_empty(), "no request without an account");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn signed_in_the_check_reads_the_lsuite_server_with_the_token() {
+        let _turn = crate::tests::ACCOUNT.lock().await;
+        let server = MockServer::start().await;
+        signed_in(&server.uri(), "lsk_test_token");
+        Mock::given(method("GET"))
+            .and(path("/api/apps/nori/latest.json"))
+            .and(header("authorization", "Bearer lsk_test_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(release(&server.uri())))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let (s, _dir) = crate::tests::session();
+        let st = check(&s, true).await.unwrap();
+        assert_eq!(st.available.as_deref(), Some("99.0.0"));
+        assert_eq!(st.notes.as_deref(), Some("Everything"));
+        assert!(st.sign_in.is_none() && st.error.is_none(), "{st:?}");
+        // A file behind the account isn't a link a browser can open: the lsuite app is.
+        assert_eq!(st.download_url, Some(format!("{}/launcher", server.uri())));
+        let found = s.update.lock().found.clone().expect("this platform's file was found");
+        assert_eq!(found.token.as_deref(), Some("lsk_test_token"), "files on the server are fetched with the token");
+        crate::account::remove();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_refused_token_asks_to_sign_in_again() {
+        let _turn = crate::tests::ACCOUNT.lock().await;
+        let server = MockServer::start().await;
+        signed_in(&server.uri(), "lsk_expired");
+        Mock::given(method("GET"))
+            .and(path("/api/apps/nori/latest.json"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({ "type": "error", "error": { "type": "authentication_error", "message": "Sign in to lsuite to get the apps: the account is free." } })))
+            .mount(&server)
+            .await;
+        let (s, _dir) = crate::tests::session();
+        let st = check(&s, true).await.unwrap();
+        assert_eq!(st.sign_in.as_deref(), Some(SIGN_IN));
+        assert!(st.error.is_none());
+        crate::account::remove();
+    }
+
+    #[test]
+    fn the_token_only_goes_to_the_lsuite_server() {
+        let src = ManifestSource { url: "https://lsuite.xyz/api/apps/nori/latest.json".into(), server: "https://lsuite.xyz".into(), token: Some("lsk_x".into()), needs_account: true };
+        assert_eq!(src.token_for("https://lsuite.xyz/api/apps/nori/files/nori-v1.0.0/nori_amd64.AppImage").as_deref(), Some("lsk_x"));
+        assert_eq!(src.token_for("https://objects.githubusercontent.com/x"), None);
+        assert_eq!(src.token_for("http://lsuite.xyz/api/apps/nori/files/x"), None, "not over plain http");
+        assert_eq!(src.token_for("https://lsuite.xyz.evil.com/x"), None);
+        let test = ManifestSource { needs_account: false, ..src };
+        assert_eq!(test.token_for("https://lsuite.xyz/x"), None, "NORI_UPDATE_URL runs without the account");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn downloads_follow_the_file_route_without_leaking_the_token() {
+        let (s, dir) = crate::tests::session();
+        let k = keys();
+        let data = b"the next nori".repeat(5_000);
+        let signature = sign(&k, &data, "timestamp:1\tfile:nori_amd64.AppImage\tversion:99.0.0");
+        let (lsuite, storage) = (MockServer::start().await, MockServer::start().await);
+        Mock::given(method("GET"))
+            .and(path("/api/apps/nori/files/nori-v99.0.0/nori_amd64.AppImage"))
+            .and(header("authorization", "Bearer lsk_test_token"))
+            .respond_with(ResponseTemplate::new(302).insert_header("location", format!("{}/signed/nori_amd64.AppImage?sig=abc", storage.uri())))
+            .expect(1)
+            .mount(&lsuite)
+            .await;
+        Mock::given(method("GET")).and(path("/signed/nori_amd64.AppImage")).respond_with(ResponseTemplate::new(200).set_body_bytes(data.clone())).expect(1).mount(&storage).await;
+        let found = Found {
+            version: "99.0.0".into(),
+            url: format!("{}/api/apps/nori/files/nori-v99.0.0/nori_amd64.AppImage", lsuite.uri()),
+            signature,
+            token: Some("lsk_test_token".into()),
+        };
+        let file = dir.path().join("nori_amd64.AppImage");
+        download_verified_with(&s, &found, &file, &k.pk_b64).await.unwrap();
+        assert_eq!(std::fs::read(&file).unwrap(), data);
+        let asked = storage.received_requests().await.unwrap();
+        assert!(asked.iter().all(|r| !r.headers.contains_key("authorization")), "the storage host never sees the token");
+        // A tampered file is refused, wherever it came from.
+        let other = Found { signature: sign(&keys(), &data, "timestamp:1\tfile:x\tversion:99.0.0"), ..found };
+        assert!(download_verified_with(&s, &other, &file, &k.pk_b64).await.is_err());
     }
 }

@@ -1,5 +1,5 @@
 //! Pictures for agents that can see: the commands that draw something to a PNG (`page.look`,
-//! `layer.look`, `ui.screenshot`) hand their picture to the model as well as its path.
+//! `layer.look`, `harness.look`, `ui.screenshot`) hand their picture to the model as well as its path.
 
 use std::path::PathBuf;
 
@@ -17,7 +17,7 @@ pub struct Picture {
 /// The pictures a command's result points at.
 pub fn pictures_in(command: &str, result: &Value) -> Vec<PathBuf> {
     match command {
-        "page.look" | "layer.look" | "ui.screenshot" => result.get("path").and_then(Value::as_str).map(PathBuf::from).into_iter().collect(),
+        "page.look" | "layer.look" | "harness.look" | "ui.screenshot" => result.get("path").and_then(Value::as_str).map(PathBuf::from).into_iter().collect(),
         _ => vec![],
     }
 }

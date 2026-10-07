@@ -6,12 +6,14 @@
 //! * [`bridge`] lets the CLI and MCP drive the running app over a token-protected loopback
 //!   socket; [`discovery`] tells other lsuite apps where nori is.
 //! * [`account`] is the lsuite AI sign-in; [`plugins`] the plugin host.
+//! * [`harness`] is what makes agents good here: the expert brief, skills, live context and checks.
 
 pub mod account;
 pub mod bridge;
 pub mod commands;
 pub mod diagnostics;
 pub mod discovery;
+pub mod harness;
 pub mod plugins;
 pub mod registry;
 pub mod release_notes;

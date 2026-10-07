@@ -151,7 +151,9 @@ fn layers(s: &mut krilla::surface::Surface, doc: &Document, page: &Page, list: &
             }
             Content::Fill { color } => {
                 let mut pb = PathBuilder::new();
-                if let Some(r) = krilla::geom::Rect::from_xywh(0.0, 0.0, page.width as f32, page.height as f32) {
+                // A fill covers the bleed too: it is the page's paper.
+                let b = page.bleed.max(0.0);
+                if let Some(r) = krilla::geom::Rect::from_xywh(-b, -b, page.width as f32 + 2.0 * b, page.height as f32 + 2.0 * b) {
                     pb.push_rect(r);
                 }
                 if let Some(path) = pb.finish() {
@@ -182,10 +184,17 @@ pub fn write(doc: &Document, pages: Option<&[usize]>) -> Result<Vec<u8>, String>
     }
     for i in list {
         let page = &doc.pages[i];
-        let settings = krilla::page::PageSettings::from_wh(page.width as f32 * k, page.height as f32 * k).ok_or("a page has no size")?;
+        // With a bleed the sheet is bigger than the page by the bleed on every side: the trim
+        // box marks the page, the bleed box the sheet, and artwork past the edge prints on.
+        let b = page.bleed.max(0.0) * k;
+        let (w, h) = (page.width as f32 * k, page.height as f32 * k);
+        let mut settings = krilla::page::PageSettings::from_wh(w + 2.0 * b, h + 2.0 * b).ok_or("a page has no size")?;
+        if b > 0.0 {
+            settings = settings.with_trim_box(krilla::geom::Rect::from_xywh(b, b, w, h)).with_bleed_box(krilla::geom::Rect::from_xywh(0.0, 0.0, w + 2.0 * b, h + 2.0 * b));
+        }
         let mut p = pdf.start_page_with(settings);
         let mut s = p.surface();
-        s.push_transform(&Transform::from_row(k, 0.0, 0.0, k, 0.0, 0.0));
+        s.push_transform(&Transform::from_row(k, 0.0, 0.0, k, b, b));
         let (flat, above) = crate::plan::split(doc, page);
         if let Some((pixels, x, y)) = flat {
             image(&mut s, &pixels, x, y);
@@ -221,6 +230,22 @@ mod tests {
         let back = read(&bytes, "PDF roundtrip").unwrap();
         assert_eq!(back.pages.len(), 2);
         assert!(back.pages[0].layers.len() > 1);
+    }
+
+    #[test]
+    fn a_bleed_makes_the_sheet_bigger_and_marks_the_trim() {
+        let mut d = Document::new("Flyer", 2480, 3508, Some(Color::WHITE));
+        d.dpi = 300.0;
+        let id = d.new_id();
+        d.insert_above(Layer::new(id, "Full bleed", Content::Vector { shape: Shape::new(Geometry::Rect { x: -35.0, y: -35.0, w: 2550.0, h: 3578.0, radius: 0.0 }, Paint::solid(Color::rgb(0.1, 0.2, 0.4)), None) }), None);
+        let plain = String::from_utf8_lossy(&write(&d, None).unwrap()).into_owned();
+        assert!(!plain.contains("/TrimBox"), "no bleed, no trim box");
+        d.pages[0].bleed = 35.0;
+        let bled = String::from_utf8_lossy(&write(&d, None).unwrap()).into_owned();
+        assert!(bled.contains("/TrimBox") && bled.contains("/BleedBox"), "the trim and the bleed are marked");
+        // 2480 px at 300 dpi is 595.2 pt; 35 px is 8.4 pt on each side: a 612 pt wide sheet.
+        let media = bled.find("/MediaBox").map(|i| bled[i..].chars().take(60).collect::<String>()).unwrap_or_default();
+        assert!(media.contains("612"), "the sheet is the page plus the bleed: {media}");
     }
 }
 

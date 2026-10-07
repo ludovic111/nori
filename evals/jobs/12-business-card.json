@@ -1,0 +1,15 @@
+{
+  "name": "business-card",
+  "title": "A print business card",
+  "skill": "poster",
+  "prompt": "Design a print business card (use the card preset) for Ada Lovelace, Analytical Engineer at Difference Ltd — ada@difference.example — +44 20 7946 0000. Clear hierarchy, everything inside safe margins, nothing smaller than 6 pt. Export a PDF to {out}/card.pdf.",
+  "checks": [
+    { "check": "pageSize", "width": 1050, "height": 600 },
+    { "check": "text", "contains": "ada lovelace" },
+    { "check": "text", "contains": "ada@difference.example" },
+    { "check": "smallestText", "minPx": 25 },
+    { "check": "contrast" },
+    { "check": "problems", "kinds": ["offPage", "pastEdge", "overflow", "outsideMargins"] },
+    { "check": "export", "path": "card.pdf" }
+  ]
+}

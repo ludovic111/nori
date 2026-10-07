@@ -20,13 +20,17 @@ crates/nori-io       open/export: pictures (image crate), PSD layers (psd crate)
                      SVG in (usvg) and out, PDF out (krilla), .gbr brushes and .ase swatches,
                      the editors people come from (APPS) and formats (FORMATS)
 crates/nori-control  registry (commands/mod.rs lists every spec), session, permissions, bridge,
-                     discovery, lsuite account (account.rs), plugin host (plugins.rs), settings
+                     discovery, lsuite account (account.rs), plugin host (plugins.rs), settings,
+                     the agent harness (harness/: brief.md, skills/*.md, context.rs, checks.rs),
+                     updates through lsuite (update.rs)
 crates/nori-agent    the built-in agent (lsuite AI, Claude Code, Codex, Anthropic, OpenAI, Ollama,
                      OpenAI-compatible), ported from kimchi-agent
 crates/nori-desktop  the window (package/binary `nori`): store.rs, app.rs, views/, ui/, theme.rs
-crates/nori-cli      `nori-cli`;  crates/nori-mcp: `nori-mcp`
+crates/nori-cli      `nori-cli` (and `nori-cli agent`: the built-in agent on a file);  crates/nori-mcp: `nori-mcp`
 crates/nori-plugin   the plugin SDK: frozen repr(C) ABI (ffi.rs), GUIDE.md (what plugin.guide returns)
 plugins/             two example SDK plugins: duotone, halftone
+evals/               the agent evals (nori-evals): jobs/*.json, runner, RESULTS.md
+scripts/publish-build.sh  a kimchi suite-build run → nori-v<version> in ludovic111/lsuite-builds
 ```
 
 Rules that keep it working:
@@ -91,8 +95,10 @@ strings in the window. `grep -rn nori` finds them all.
   old copies stay mapped.
 - lsuite AI is the default agent provider (AI.md); signing in is the person's own action
   (`account.signIn` is person-only).
-- Auto-update: `app.checkUpdates` reads GitHub Releases and the window points at the download
-  page; signed in-place updates (kimchi's updater) come with the first published release.
+- Auto-update (0.2, lsuite's DISTRIBUTION.md): `app.checkUpdates` reads
+  `<server>/api/apps/nori/latest.json` with the lsuite account's token; signed out, the status's
+  `signIn` says "Sign in to lsuite (in the lsuite app) to get updates". `NORI_UPDATE_URL` keeps
+  working without an account (tests). Signatures unchanged.
 
 ## lsuite
 
@@ -108,9 +114,23 @@ lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `AI.md`, `desi
 - [x] Discovery: `~/.lsuite/apps/nori.json` (kind `image`); hand-off `handoff.toKimchi`.
 - [x] Plugins per PLUGINS.md (stock, installed, formats, build with your agent, `plugin.*`).
 - [x] Design system v2, one-ink mark and icon.
-- [ ] Signed auto-update (no release published yet).
-- [ ] Release binaries: workflows are in `.github/workflows` (no secrets set); the Mac build is
-      `scripts/bundle-macos.sh` on the Mac mini.
+- [x] Signed auto-update through lsuite (0.2): `<server>/api/apps/nori/latest.json` with the
+      account's token, the file route with the token (never to another host), "Sign in to lsuite"
+      when signed out; tests against a fake server in `update.rs`.
+- [x] Builds: kimchi's `suite-build.yml` (app=nori) builds and signs; `scripts/publish-build.sh
+      <version> <run-id>` checks the signatures, writes `latest.json` and `SHA256SUMS` and creates
+      `nori-v<version>` in `ludovic111/lsuite-builds` (`--dry-run` first).
+- [x] Agent harness (HARNESS.md, 0.2): 1 expert brief (`harness/brief.md`, ~1,300 words, the
+      Agent panel's system prompt and nori-mcp's instructions; a test keeps it 800–1,500 words);
+      2 eleven skills (`harness/skills/*.md`, MCP prompts and `nori://skills/<name>`; a test
+      checks every command they name exists); 3 live context before every model step
+      (`harness.context`, `Part::Context` in the thread, appended to MCP tool results when the
+      document changed); 4 `harness.look` / `harness.check` (contrast, bounds and bleed,
+      resolution, overflow, print colours); 5 the finish routine in the brief and skills; 6 one
+      checkpoint per turn (as before); 7 evals in `evals/` (12 jobs, `nori-evals`, RESULTS.md).
+      Part 8 (the suite agent) lives in the lsuite app.
+- [ ] Harness next: run all twelve evals on each release candidate (only a few were run for 0.2);
+      a vision-free fallback for local models that can't see (they get the checks' numbers only).
 - [ ] Not done: tabs (several documents), smart objects, a curves graph editor (presets and
       `layer.setAdjustment` only), selectable text in PDF, PSD and IDML export, XCF and `.ai`
       import, pen pressure from tablets (the engine takes pressure; the window sends 1).

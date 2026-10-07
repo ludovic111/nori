@@ -38,6 +38,10 @@ fn wire(system: &str, messages: &[Message], vision: bool) -> Vec<Value> {
                 if !text.is_empty() {
                     out.push(json!({ "role": "user", "content": text }));
                 }
+                let context = m.context();
+                if !context.is_empty() {
+                    out.push(json!({ "role": "user", "content": context }));
+                }
             }
             Role::Assistant => {
                 let calls: Vec<Value> = m
