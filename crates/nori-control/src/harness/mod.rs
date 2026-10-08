@@ -105,7 +105,7 @@ pub fn words(text: &str) -> usize {
 /// `nori-mcp`'s instructions: how this server runs (`mode`), then the brief.
 pub fn mcp_instructions(mode: &str) -> String {
     format!(
-        "{mode}\nThe whole document: doc_overview (also the resource nori://doc/overview). The live context (nori://harness/context) comes with tool results when the document changed. Skills are also prompts and resources (nori://skills/<name>).\n\n{}",
+        "{mode}\nThe whole document: doc_overview (also the resource nori://doc/overview). The live context (nori://harness/context) comes with tool results when the document changed, with the other notes (file saved, finish routine) after the text and in structuredContent.harnessNotes. Skills are also prompts and resources (nori://skills/<name>).\n\n{}",
         brief()
     )
 }

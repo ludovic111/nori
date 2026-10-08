@@ -331,36 +331,40 @@ impl Server {
                     return Err((-32602, format!("Unknown tool `{name}`: the built-in agent doesn't drive itself")));
                 }
                 let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
-                let mut reply = match self.backend.call(spec.name, arguments).await {
+                let result = self.backend.call(spec.name, arguments).await;
+                let mut notes = vec![];
+                let mut reply = match &result {
                     Ok(result) => {
-                        let mut text = serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string());
+                        let text = serde_json::to_string_pretty(result).unwrap_or_else(|_| result.to_string());
                         if spec.mutates
                             && let Some(path) = self.backend.path()
                         {
-                            text.push_str(&format!("\n(saved {})", path.display()));
+                            notes.push(format!("Saved {}.", path.display()));
                         }
                         // A frame, a media look or a screenshot: the client's model gets the picture itself.
                         let mut pictures = vec![];
-                        for path in nori_control::vision::pictures_in(spec.name, &result) {
+                        for path in nori_control::vision::pictures_in(spec.name, result) {
                             match nori_control::vision::picture(&path).await {
                                 Ok(p) => pictures.push(json!({ "type": "image", "data": p.data, "mimeType": p.media_type })),
-                                Err(e) => text.push_str(&format!("\n(The picture couldn't be attached: {e})")),
+                                Err(e) => notes.push(format!("The picture couldn't be attached: {e}")),
                             }
                         }
                         let mut reply = json!({ "content": std::iter::once(json!({ "type": "text", "text": text })).chain(pictures).collect::<Vec<_>>(), "isError": false });
                         if result.is_object() {
-                            reply["structuredContent"] = result;
+                            reply["structuredContent"] = result.clone();
                         }
                         reply
                     }
                     Err(message) => json!({ "content": [{ "type": "text", "text": message }], "isError": true }),
                 };
-                // The live context, when the document changed since the last one sent.
-                if let Some(block) = self.context_update(spec.name).await
-                    && let Some(content) = reply["content"].as_array_mut()
-                {
-                    content.push(json!({ "type": "text", "text": block }));
+                if result.is_ok() && spec.mutates {
+                    notes.push(FINISH_REMINDER.to_string());
                 }
+                // The live context, when the document changed since the last one sent.
+                if let Some(block) = self.context_update(spec.name).await {
+                    notes.push(block);
+                }
+                add_notes(&mut reply, notes);
                 Ok(reply)
             }
             "resources/list" => {
@@ -436,6 +440,24 @@ impl Server {
     }
 }
 
+/// Said after every change: the brief's finish routine, where the agent is about to need it.
+const FINISH_REMINDER: &str = "Before you say it's done: harness_look every page you changed, compare it with the request, fix what is off (up to three passes), then report in a few lines.";
+
+/// Notes for the model (the file saved, the finish routine, the live context) go both after the
+/// text and into `structuredContent.harnessNotes`: some clients (Claude Code) show a result's
+/// structured content *instead of* its text when both are present.
+fn add_notes(reply: &mut Value, notes: Vec<String>) {
+    if notes.is_empty() {
+        return;
+    }
+    if let Some(content) = reply["content"].as_array_mut() {
+        content.push(json!({ "type": "text", "text": notes.join("\n\n") }));
+    }
+    if let Some(structured) = reply.get_mut("structuredContent").and_then(Value::as_object_mut) {
+        structured.insert("harnessNotes".into(), json!(notes));
+    }
+}
+
 /// Registry-backed resources: uri, name, description, command.
 const RESOURCES: [(&str, &str, &str, &str); 7] = [
     ("nori://harness/brief", "Expert brief", "How a senior designer works in nori: the quality bar, the commands for the common jobs, the usual mistakes, the finish routine, the skills.", "harness.brief"),
@@ -494,6 +516,32 @@ fn error(id: Value, code: i64, message: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn notes_reach_clients_that_read_only_structured_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notes.nori");
+        // SAFETY: the only test in this crate that reads these, set before the session starts.
+        unsafe {
+            std::env::set_var("NORI_DATA_DIR", dir.path().join("data"));
+            std::env::set_var("NORI_CONFIG_DIR", dir.path().join("config"));
+            std::env::set_var("LSUITE_HOME", dir.path().join("home"));
+            std::env::set_var("NORI_NO_SYSTEM_FONTS", "1");
+        }
+        let server = Server { backend: Backend::file(&path, Source::Mcp).await.unwrap(), context: Mutex::new(None) };
+        let call = |name: &str, arguments: Value| json!({ "name": name, "arguments": arguments });
+        let reply = server.dispatch("tools/call", &call("doc_new", json!({ "width": 200, "height": 100 }))).await.unwrap();
+        let notes: Vec<&str> = reply["structuredContent"]["harnessNotes"].as_array().expect("harnessNotes").iter().filter_map(Value::as_str).collect();
+        assert!(notes.iter().any(|n| n.starts_with("Saved ") && n.contains("notes.nori")), "{notes:?}");
+        assert!(notes.iter().any(|n| n.contains("harness_look")), "the finish routine: {notes:?}");
+        assert!(notes.iter().any(|n| n.starts_with("<context>")), "the live context: {notes:?}");
+        // The text has them too, for clients that read it.
+        let text: String = reply["content"].as_array().unwrap().iter().filter_map(|c| c["text"].as_str()).collect();
+        assert!(text.contains("<context>") && text.contains("harness_look"), "{text}");
+        // A query that changes nothing has no finish reminder, and no context when nothing changed.
+        let reply = server.dispatch("tools/call", &call("layer_list", json!({}))).await.unwrap();
+        assert!(reply["structuredContent"].get("harnessNotes").is_none(), "{reply}");
+    }
 
     #[tokio::test]
     async fn lines_are_read_within_the_limit() {

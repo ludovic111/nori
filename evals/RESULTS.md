@@ -9,6 +9,18 @@ check passes. Runs are newest first; `nori-evals --record` adds one (see `src/ma
 docs/AI_CONTROL.md, "Evals"). Run them before each release: a harness change that lowers the
 pass rate doesn't ship.
 
+## 2026-10-08 02:02 · nori 0.2.0 · claude-code with `sonnet`
+
+1/1 jobs passed (100 %), 5/5 checks (100 %). Run: `2026-10-08-0202-claude-code-sonnet`.
+
+| Job | Result | Checks | Commands | Skill loaded | Looked | Time | Failed checks |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| contrast-fix | pass | 5/5 | 4 | — | yes | 20 s | — |
+
+After notes went into `structuredContent.harnessNotes` (Claude Code shows only the structured
+content of a result that has both) and `doc.batch` learnt tool names: the batch went through
+first time, and the agent looked again after its edit.
+
 ## 2026-10-08 00:22 · nori 0.2.0 · claude-code with `sonnet`
 
 2/2 jobs passed (100 %), 8/8 checks (100 %). Run: `2026-10-08-0019-claude-code-sonnet`.
