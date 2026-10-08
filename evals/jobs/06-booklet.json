@@ -1,0 +1,17 @@
+{
+  "name": "booklet",
+  "title": "An 8-page A5 booklet with threaded text and page numbers",
+  "skill": "booklet",
+  "timeout": 1200,
+  "prompt": "Set an 8-page A5 booklet titled \"A Short Guide to Tea\": a cover on page 1, then this text flowing through threaded text frames on pages 2 to 8 (repeat it as needed so it fills several pages), with headings set apart, and page numbers on the inside pages through a master page. Export the PDF to {out}/tea-guide.pdf.\n\nText:\nWhere tea comes from. Every tea — green, black, white or oolong — comes from the same plant, Camellia sinensis. What makes them different is what happens after the leaves are picked: how long they wither, whether they are rolled and bruised, and how much they are allowed to oxidise before heat stops the process.\n\nGreen tea. Green tea is heated soon after picking, by steaming in Japan or pan-firing in China, so it keeps its fresh, grassy character. Brew it cooler than you think, around 75 to 80 degrees, for two minutes.\n\nBlack tea. Black tea is fully oxidised, which turns the leaves dark and gives the brew its malty depth. It takes boiling water and three to five minutes, with or without milk.\n\nOolong. Oolong sits between the two: partly oxidised, often rolled into tight balls that open slowly over several short infusions. Good oolong can be brewed five or six times.\n\nWhite tea. White tea is the least processed of all: young buds, withered and dried. It is delicate and sweet, and forgives a long steep at a low temperature.\n\nStoring tea. Keep tea away from light, heat, moisture and strong smells, in an airtight tin. Green teas are best within a year; black teas and pressed teas keep much longer.",
+  "checks": [
+    { "check": "pages", "min": 8, "max": 8 },
+    { "check": "pageSize", "width": 1748, "height": 2480 },
+    { "check": "text", "contains": "short guide to tea", "page": 1 },
+    { "check": "master", "min": 6 },
+    { "check": "threads", "min": 3 },
+    { "check": "styles", "min": 1 },
+    { "check": "problems", "kinds": ["overflow", "offPage", "pastEdge"] },
+    { "check": "export", "path": "tea-guide.pdf", "minBytes": 5000 }
+  ]
+}

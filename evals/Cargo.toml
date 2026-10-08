@@ -1,0 +1,24 @@
+[package]
+name = "nori-evals"
+description = "nori's agent evals: design jobs run headless with a real model (nori-cli agent), scored on the resulting document"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "nori-evals"
+path = "src/main.rs"
+
+[dependencies]
+nori-control.workspace = true
+nori-core.workspace = true
+nori-io.workspace = true
+nori-render.workspace = true
+
+chrono.workspace = true
+futures.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true

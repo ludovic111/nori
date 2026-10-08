@@ -89,7 +89,7 @@ impl Default for Permissions {
 pub struct UpdateSettings {
     /// Install verified updates in the background when enabled.
     pub auto_install: bool,
-    /// Check GitHub Releases when the app starts. `NORI_NO_UPDATE=1` also turns it off.
+    /// Check for updates (through lsuite) when the app starts. `NORI_NO_UPDATE=1` also turns it off.
     pub check_on_start: bool,
     /// Show what's new once after nori updates.
     pub show_whats_new: bool,

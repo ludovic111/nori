@@ -1,0 +1,19 @@
+{
+  "name": "social-set",
+  "title": "Social graphics in three formats",
+  "skill": "social-set",
+  "prompt": "Make a set of social graphics for the shop \"Nori Goods\" announcing: Spring Sale — 30% off everything, this weekend only. I need a square post (1080×1080), a portrait post (1080×1350) and a story (1080×1920), each on its own page, with the same colours and fonts. Export each one as a PNG: {out}/square.png, {out}/portrait.png and {out}/story.png.",
+  "checks": [
+    { "check": "pages", "min": 3, "max": 3 },
+    { "check": "pageSize", "width": 1080, "height": 1080 },
+    { "check": "pageSize", "width": 1080, "height": 1350 },
+    { "check": "pageSize", "width": 1080, "height": 1920 },
+    { "check": "text", "contains": "30%", "everyPage": true },
+    { "check": "smallestText", "minPx": 28 },
+    { "check": "contrast" },
+    { "check": "problems", "kinds": ["offPage", "pastEdge", "overflow"] },
+    { "check": "export", "path": "square.png", "width": 1080, "height": 1080 },
+    { "check": "export", "path": "portrait.png", "width": 1080, "height": 1350 },
+    { "check": "export", "path": "story.png", "width": 1080, "height": 1920 }
+  ]
+}

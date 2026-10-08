@@ -168,8 +168,11 @@ pub fn commands() -> &'static [Spec] {
     crate::commands::SPECS
 }
 
+/// A command by name (`text.update`) or by its tool name (`text_update`: agents write the tool
+/// names they know inside `doc.batch` too).
 pub fn spec(name: &str) -> Option<&'static Spec> {
-    commands().iter().find(|s| s.name == name)
+    let same = |s: &Spec| s.name.len() == name.len() && s.name.bytes().zip(name.bytes()).all(|(a, b)| a == b || (a == b'.' && b == b'_'));
+    commands().iter().find(|s| same(s))
 }
 
 /// Runs a command. This is the only door into nori: the window, the agent,
@@ -186,9 +189,18 @@ pub async fn call_in(session: &Arc<Session>, source: Source, name: &str, params:
         None => return Err(unknown_command(name)),
     };
     let result = run_checked(session, source, spec, params.clone()).await;
-    if source != Source::Window || spec.mutates {
+    // The live context is read before every model step: it isn't a card of its own.
+    if (source != Source::Window || spec.mutates) && spec.name != "harness.context" {
+        let seq = session.next_seq();
+        if spec.mutates && result.is_ok() {
+            let mut layers: Vec<String> = ["layerId", "from", "to"].iter().filter_map(|k| params.get(*k).and_then(Value::as_str).map(str::to_string)).collect();
+            layers.extend(params.get("layerIds").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_string));
+            layers.extend(result.as_ref().map(created_layers).unwrap_or_default());
+            layers.dedup();
+            session.note_change(crate::session::Change { seq, source, command: spec.name.to_string(), layers });
+        }
         let record = CommandRecord {
-            seq: session.next_seq(),
+            seq,
             source,
             command: spec.name.to_string(),
             params,

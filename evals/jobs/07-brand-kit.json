@@ -1,0 +1,16 @@
+{
+  "name": "brand-kit",
+  "title": "A one-page brand board",
+  "skill": "brand-kit",
+  "prompt": "Make a one-page brand board on an A4 landscape page for the café \"Moss & Oak\": a palette of five colours shown as swatches with their hex codes written under them, a type specimen showing a heading style and a body style, and the name set as a simple logo. Export a PNG to {out}/brand.png.",
+  "checks": [
+    { "check": "pageSize", "width": 3508, "height": 2480 },
+    { "check": "layers", "kind": "vector", "min": 5 },
+    { "check": "hexCodes", "min": 5 },
+    { "check": "text", "contains": "moss & oak" },
+    { "check": "styles", "min": 2 },
+    { "check": "contrast" },
+    { "check": "problems", "kinds": ["offPage", "pastEdge", "overflow"] },
+    { "check": "export", "path": "brand.png" }
+  ]
+}

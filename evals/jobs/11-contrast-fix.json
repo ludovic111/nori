@@ -1,0 +1,21 @@
+{
+  "name": "contrast-fix",
+  "title": "Fix unreadable text on a pale background",
+  "skill": "poster",
+  "files": [{ "path": "pastel.png", "make": "pastel", "width": 1080, "height": 1350 }],
+  "setup": [
+    { "command": "doc.new", "params": { "name": "Workshop", "preset": "instagram" } },
+    { "command": "layer.place", "params": { "path": "{dir}/pastel.png", "x": 0, "y": 0 } },
+    { "command": "layer.update", "params": { "name": "Backdrop" } },
+    { "command": "text.add", "params": { "text": "Summer Workshop", "x": 90, "y": 420, "size": 110, "weight": 800, "color": "#ffffff", "name": "Title" } },
+    { "command": "text.add", "params": { "text": "Screen printing for beginners · 12 July · 2–5 pm", "x": 90, "y": 640, "frameWidth": 900, "frameHeight": 200, "size": 40, "color": "#e8d8d0", "name": "Details" } }
+  ],
+  "prompt": "People tell me the text on this graphic is hard to read. Make it clearly readable for everyone, without removing any of the text or the background picture.",
+  "checks": [
+    { "check": "contrast" },
+    { "check": "text", "contains": "summer workshop" },
+    { "check": "text", "contains": "screen printing" },
+    { "check": "problems", "kinds": ["offPage", "pastEdge", "overflow"] },
+    { "check": "looked" }
+  ]
+}

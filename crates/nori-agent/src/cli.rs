@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-use crate::tools::{SYSTEM_PROMPT, bounded};
+use crate::tools::{bounded, system_prompt};
 use crate::{CliSession, Conversation, Message, ProviderKind, Role, Run};
 
 const CLAUDE_PLACES: &[&str] = &["~/.local/bin/claude", "~/.claude/local/claude", "~/.claude/local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "~/.npm-global/bin/claude"];
@@ -196,7 +196,9 @@ fn live(run: &Run) -> Result<Live, String> {
         ));
     }
     let mcp = mcp_executable().ok_or_else(|| format!("{label} needs nori-mcp, which wasn't found next to nori. Reinstall nori, or choose lsuite AI or an API provider in Settings › Agent."))?;
-    Ok(Live { mcp, control: nori_control::bridge::control_path(&run.session.data_dir) })
+    // A private bridge (`nori-cli agent`) writes its own control file.
+    let control = run.session.bridge_control().unwrap_or_else(|| nori_control::bridge::control_path(&run.session.data_dir));
+    Ok(Live { mcp, control })
 }
 
 pub(crate) async fn run(run: &mut Run, prompt: String, mut conv: Conversation) -> Result<String, String> {
@@ -317,7 +319,7 @@ pub(crate) fn claude_args(config: &Path, model: &str, resume: Option<&str>, batc
     args.push("--mcp-config".into());
     args.push(config.to_string_lossy().into_owned());
     args.push("--append-system-prompt".into());
-    let system = format!("{SYSTEM_PROMPT}\nnori's commands are the MCP tools mcp__nori__family_verb; you have no other tools.");
+    let system = format!("{}\nnori's commands are the MCP tools mcp__nori__family_verb; you have no other tools.", system_prompt());
     args.push(if batch { system.split(['\r', '\n']).map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ") } else { system });
     if !model.is_empty() {
         args.extend(["--model".into(), model.into()]);
@@ -561,7 +563,7 @@ async fn codex(run: &mut Run, exe: &Path, live: &Live, workspace: &Path, resume:
     let input = if resume.is_some() {
         prompt.to_string()
     } else {
-        format!("{SYSTEM_PROMPT}\nnori's commands are the tools of the `nori` MCP server; use no other tools.\n\n{}", with_context(conv, prompt))
+        format!("{}\nnori's commands are the tools of the `nori` MCP server; use no other tools.\n\n{}", system_prompt(), with_context(conv, prompt))
     };
     run.status("Starting Codex…");
     // `own` hands the sign-in back when dropped, also when the run is cancelled.

@@ -1,0 +1,20 @@
+{
+  "name": "print-web",
+  "title": "Prepare a flyer for print (bleed) and web",
+  "skill": "export-print-web",
+  "setup": [
+    { "command": "doc.new", "params": { "name": "Flyer", "preset": "a4", "margins": 200 } },
+    { "command": "vector.addShape", "params": { "shape": "rect", "x": 0, "y": 0, "width": 2480, "height": 3508, "fill": "#0b3954", "name": "Background" } },
+    { "command": "vector.addShape", "params": { "shape": "ellipse", "x": 1300, "y": 2100, "width": 1600, "height": 1600, "fill": "#ff5a5f", "name": "Circle" } },
+    { "command": "text.add", "params": { "text": "OPEN STUDIO", "x": 200, "y": 400, "size": 260, "weight": 800, "color": "#ffffff", "name": "Title" } },
+    { "command": "text.add", "params": { "text": "Saturday 6 December, 10 am – 6 pm\nStudio 4, 18 Mill Lane", "x": 200, "y": 900, "frameWidth": 2080, "frameHeight": 400, "size": 80, "color": "#ffffff", "name": "Details" } }
+  ],
+  "prompt": "Prepare this flyer for the printer and for the web: add a 3 mm bleed with the background extended into it, keep the text safely inside, then export a print PDF to {out}/flyer-print.pdf and a 1200 px wide JPEG for the website to {out}/flyer-web.jpg.",
+  "checks": [
+    { "check": "bleed", "min": 30 },
+    { "check": "problems", "kinds": ["shortOfBleed", "noBleed", "pastEdge", "offPage", "outsideMargins"] },
+    { "check": "text", "contains": "open studio" },
+    { "check": "export", "path": "flyer-print.pdf", "minBytes": 1000 },
+    { "check": "export", "path": "flyer-web.jpg", "width": 1200 }
+  ]
+}

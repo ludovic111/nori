@@ -1,0 +1,15 @@
+{
+  "name": "logo",
+  "title": "A vector logo mark and wordmark",
+  "skill": "logo",
+  "prompt": "Design a logo for \"kumo\", a small cloud-storage company: a simple geometric cloud symbol and the wordmark \"kumo\" in lowercase, vectors only, on a transparent 1024×1024 canvas. Export it as an SVG to {out}/kumo.svg and as a PNG to {out}/kumo.png.",
+  "checks": [
+    { "check": "pageSize", "width": 1024, "height": 1024 },
+    { "check": "vectorOnly" },
+    { "check": "layers", "kind": "vector", "min": 1 },
+    { "check": "text", "contains": "kumo" },
+    { "check": "problems", "kinds": ["offPage", "pastEdge"] },
+    { "check": "export", "path": "kumo.svg" },
+    { "check": "export", "path": "kumo.png" }
+  ]
+}

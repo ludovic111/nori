@@ -1,0 +1,25 @@
+{
+  "name": "cutout",
+  "title": "Cut a product out of its white background onto a scene",
+  "skill": "cutout-composite",
+  "files": [
+    { "path": "beach.png", "make": "beach", "width": 1600, "height": 1200 },
+    { "path": "ball.png", "make": "product", "width": 800, "height": 800 }
+  ],
+  "setup": [
+    { "command": "doc.new", "params": { "name": "Beach ball", "width": 1600, "height": 1200 } },
+    { "command": "layer.place", "params": { "path": "{dir}/beach.png", "x": 0, "y": 0 } },
+    { "command": "layer.update", "params": { "name": "Beach" } },
+    { "command": "layer.place", "params": { "path": "{dir}/ball.png", "x": 400, "y": 380 } },
+    { "command": "layer.update", "params": { "name": "Product" } }
+  ],
+  "prompt": "The layer \"Product\" is a red ball photographed on a white background. Cut it out so it sits on the beach scene underneath — with a mask, without erasing any of its pixels — and give it a soft shadow on the sand so it looks grounded.",
+  "checks": [
+    { "check": "masked", "name": "Product" },
+    { "check": "unchangedPixels" },
+    { "check": "pixel", "x": 430, "y": 410, "not": "#ffffff", "tolerance": 30, "label": "the white corner is gone" },
+    { "check": "pixel", "x": 800, "y": 796, "near": "#c8283a", "tolerance": 120, "label": "the ball is still there" },
+    { "check": "layers", "min": 3 },
+    { "check": "looked" }
+  ]
+}

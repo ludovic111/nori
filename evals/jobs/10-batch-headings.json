@@ -1,0 +1,23 @@
+{
+  "name": "batch-headings",
+  "title": "Restyle every heading in a document at once",
+  "skill": "batch-edits",
+  "setup": [
+    { "command": "doc.new", "params": { "name": "Report", "width": 1920, "height": 1080, "pages": 3 } },
+    { "command": "page.select", "params": { "page": "1" } },
+    { "command": "text.add", "params": { "text": "Our year", "x": 120, "y": 100, "size": 70, "font": "IBM Plex Mono", "weight": 400, "color": "#444444", "name": "Heading 1" } },
+    { "command": "text.add", "params": { "text": "We grew from three people to twelve and opened a second studio.", "x": 120, "y": 300, "frameWidth": 1400, "frameHeight": 300, "size": 40, "color": "#222222", "name": "Body 1" } },
+    { "command": "page.select", "params": { "page": "2" } },
+    { "command": "text.add", "params": { "text": "What we made", "x": 140, "y": 90, "size": 110, "weight": 600, "color": "#aa3355", "name": "Heading 2" } },
+    { "command": "text.add", "params": { "text": "Forty projects for clients in nine countries.", "x": 140, "y": 320, "frameWidth": 1400, "frameHeight": 300, "size": 40, "color": "#222222", "name": "Body 2" } },
+    { "command": "page.select", "params": { "page": "3" } },
+    { "command": "text.add", "params": { "text": "Next year", "x": 100, "y": 120, "size": 88, "weight": 300, "italic": true, "color": "#3355aa", "name": "Heading 3" } },
+    { "command": "text.add", "params": { "text": "A shop, a book and a lot more tea.", "x": 100, "y": 330, "frameWidth": 1400, "frameHeight": 300, "size": 40, "color": "#222222", "name": "Body 3" } }
+  ],
+  "prompt": "The headings in this document are all set differently. Make every heading on every page consistent — Manrope, weight 800, 96 px, colour #1d3557 — through one paragraph style called \"Heading\". Don't change the body text.",
+  "checks": [
+    { "check": "textStyle", "namePrefix": "Heading", "min": 3, "font": "Manrope", "weight": 800, "size": 96, "color": "#1d3557", "style": "Heading" },
+    { "check": "unchangedText", "namePrefix": "Body" },
+    { "check": "pages", "min": 3, "max": 3 }
+  ]
+}

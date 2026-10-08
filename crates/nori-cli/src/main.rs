@@ -33,6 +33,8 @@ fn stdout_failed(e: std::io::Error) -> ! {
     std::process::exit(141)
 }
 
+mod agent;
+
 const USAGE: &str = "nori-cli — nori from the terminal
 
 USAGE
@@ -47,6 +49,10 @@ USAGE
   nori-cli convert <in> <out> [--scale N] [--quality N] [--page N]
                                    open any file nori reads and write it as another format (PNG, JPEG,
                                    WebP, TIFF, BMP, ORA, SVG, PDF, .nori)
+  nori-cli --file <f> agent \"<request>\" [--provider P] [--model M] [--max-steps N] [--json]
+                                   run nori's built-in agent on a file (or --headless), without the app:
+                                   lsuite AI, claude-code (no key needed), codex, anthropic, openai, ollama…
+                                   (default: Settings › Agent); the file is saved at the end
 
 OPTIONS
   --file <file>      work on a file in this process; every change is saved (a .nori to itself, any
@@ -68,6 +74,7 @@ EXAMPLES
   nori-cli --file poster.nori text.add --text \"Summer\" --x 200 --y 300 --size 220
   nori-cli --file photo.jpg layer.addAdjustment kind=curves --args '{\"settings\":{\"rgb\":[[0,0],[128,150],[255,255]]}}'
   nori-cli --file photo.nori export.file path=photo-web.jpg quality=85
+  nori-cli --file poster.nori agent \"Make an A3 poster for a jazz night\" --provider claude-code
   nori-cli convert drawing.svg drawing.pdf
 
 Exit status: 0 on success, 1 when a command fails, 2 on a usage error.";
@@ -140,6 +147,7 @@ async fn run(args: &[String]) -> Res {
         "mcp-config" => mcp_config(&inv),
         "batch" => batch(&inv).await,
         "convert" => convert(&inv).await,
+        "agent" => agent::run(&inv).await,
         _ => run_command(&inv, &command, inv.params.clone()).await,
     }
 }

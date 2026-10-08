@@ -60,6 +60,7 @@ pub(super) fn wire(messages: &[Message]) -> Vec<Value> {
                     // lsuite AI is Anthropic's API: their thinking blocks replay to either.
                     Part::Opaque { provider: ProviderKind::Anthropic | ProviderKind::Lsuite, block } => Some(block.clone()),
                     Part::Opaque { .. } => None,
+                    Part::Context { text } => Some(json!({ "type": "text", "text": text })),
                 })
                 .collect();
             if content.is_empty() {

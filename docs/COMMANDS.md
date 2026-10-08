@@ -985,7 +985,7 @@ File formats nori opens and writes, and the editors people come from (Photoshop,
 
 ### `export.file`
 
-Write the document to a file: PNG, JPEG, WebP, TIFF, BMP (a page drawn, at any scale), OpenRaster (layers, for Krita and GIMP), SVG (a page as vectors), PDF (every page, vectors and text kept as vectors) or .nori. The format comes from the extension unless given. _(changes things · permission: files)_
+Write the document to a file: PNG, JPEG, WebP, TIFF, BMP (a page drawn, at any scale), OpenRaster (layers, for Krita and GIMP), SVG (a page as vectors), PDF (every page, vectors and text kept as vectors; a page with a bleed gets a sheet that much bigger, with its trim and bleed boxes marked) or .nori. The format comes from the extension unless given. _(changes things · permission: files)_
 
 | Parameter | Type | | Description |
 | --- | --- | --- | --- |
@@ -1132,6 +1132,52 @@ Build a plugin crate, bundle it and install it: it loads at once, no restart. _(
 | --- | --- | --- | --- |
 | `name` | string | required | The crate's name. |
 
+## harness
+
+### `harness.brief`
+
+The expert brief for agents working in nori (Markdown): the trade's quality bar (retouching, compositing, vectors, type and grids, print, colour, contrast, accessibility), the document's model, the commands for the common jobs, the usual mistakes, the finish routine and the skills' index. The built-in agent's system prompt and nori-mcp's instructions are made from it. _(read only)_
+
+### `harness.skills`
+
+The skills: playbooks for design jobs (retouch a photo, poster, booklet, logo, brand kit, export for print and web…), each {name, title, when}. _(read only)_
+
+### `harness.skill`
+
+One skill's recipe (Markdown): when to use it, the steps with the exact commands, the checks that prove it worked. Load it before the first edit of a job it covers. _(read only)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `name` | string | required | The skill's name, as harness.skills lists it (poster, logo, booklet…). |
+
+### `harness.context`
+
+The live context an agent gets before each step: the page and its grid, its layers, the active layer, the selection, the tool, quick problems, and the changes others made since `since`. _(read only)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `since` | integer |  | The `seq` of the previous context: report what others changed after it. |
+| `exclude` | string |  | Sources whose changes not to report, comma-separated (window, agent, cli, mcp); default the caller's own. |
+
+### `harness.check`
+
+Measure a page for problems an eye misses: text contrast (WCAG ratio of each text layer against what is behind it), things outside the page, past its edge or margins, artwork short of the bleed, picture resolution at print size (real detail per inch), text that overflows, empty layers, colours CMYK can't print. _(read only)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `page` | string |  | Page id, name or number (from 1). Defaults to the active page. |
+| `all` | boolean |  | Every page. |
+
+### `harness.look`
+
+Look at the work: the page (or a region) as a picture the model sees, with harness.check's numbers. Use it before saying a job is done. _(read only)_
+
+| Parameter | Type | | Description |
+| --- | --- | --- | --- |
+| `page` | string |  | Page id, name or number (from 1). Defaults to the active page. |
+| `width` | integer |  | Width of the picture in pixels (default 1024). |
+| `region` | array of numbers |  | [x, y, width, height] of the page to show. |
+
 ## app
 
 ### `app.version`
@@ -1161,7 +1207,7 @@ Change a setting by its dotted key (appearance.mode, tools.brush.size…). The a
 
 ### `app.checkUpdates`
 
-Look for a newer nori on GitHub Releases. _(read only)_
+Look for a newer nori, through lsuite (the free lsuite account gets updates; signed out, the status says to sign in in the lsuite app). _(read only)_
 
 ### `app.updateStatus`
 
