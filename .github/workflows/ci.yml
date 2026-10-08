@@ -37,6 +37,12 @@ jobs:
           sudo apt-get install -y pkg-config clang libasound2-dev libdbus-1-dev libfontconfig-dev libfreetype-dev \
             libssl-dev libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
             libzstd-dev libglib2.0-dev
+      - name: Own Rust install per repo on ludodesktop
+        # The runners of several repos run at once; a shared ~/.rustup makes their installs collide.
+        if: runner.environment == 'self-hosted'
+        run: |
+          echo "RUSTUP_HOME=$HOME/.rustup-${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
+          echo "CARGO_HOME=$HOME/.cargo-${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
