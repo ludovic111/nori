@@ -129,8 +129,9 @@ lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `AI.md`, `desi
       resolution, overflow, print colours); 5 the finish routine in the brief and skills; 6 one
       checkpoint per turn (as before); 7 evals in `evals/` (12 jobs, `nori-evals`, RESULTS.md).
       Part 8 (the suite agent) lives in the lsuite app.
-- [ ] Harness next: run all twelve evals on each release candidate (only a few were run for 0.2);
-      a vision-free fallback for local models that can't see (they get the checks' numbers only).
+- [x] Evals for 0.2.0: all twelve with Claude Code on Opus, 12/12 (evals/RESULTS.md).
+- [ ] Harness next: run all twelve evals on each release candidate; a vision-free fallback for
+      local models that can't see (they get the checks' numbers only).
 - [ ] Not done: tabs (several documents), smart objects, a curves graph editor (presets and
       `layer.setAdjustment` only), selectable text in PDF, PSD and IDML export, XCF and `.ai`
       import, pen pressure from tablets (the engine takes pressure; the window sends 1).

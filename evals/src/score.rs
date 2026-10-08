@@ -188,10 +188,12 @@ fn run(scene: &Scene, c: &Value) -> Result<String, String> {
             if d.dpi as f64 >= min.unwrap_or(0.0) { Ok(format!("{} dpi", d.dpi)) } else { Err(format!("{} dpi", d.dpi)) }
         }
         "text" => {
-            let needle = c["contains"].as_str().unwrap_or("").to_lowercase();
+            // Line breaks are spaces: a headline set on two lines ("Blue Hour\nJazz") still says it.
+            let words = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
+            let needle = words(c["contains"].as_str().unwrap_or(""));
             let every = c["everyPage"].as_bool().unwrap_or(false);
             let list = pages(d, c)?;
-            let has = |p: &Page| texts(&shown(p)).iter().any(|(_, t)| t.text.to_lowercase().contains(&needle));
+            let has = |p: &Page| texts(&shown(p)).iter().any(|(_, t)| words(&t.text).contains(&needle));
             let n = list.iter().filter(|p| has(p)).count();
             if (every && n == list.len()) || (!every && n > 0) { Ok(format!("on {n} page(s)")) } else { Err(format!("\"{needle}\" is on {n} of {} page(s)", list.len())) }
         }

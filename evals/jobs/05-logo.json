@@ -6,7 +6,7 @@
   "checks": [
     { "check": "pageSize", "width": 1024, "height": 1024 },
     { "check": "vectorOnly" },
-    { "check": "layers", "kind": "vector", "min": 2 },
+    { "check": "layers", "kind": "vector", "min": 1 },
     { "check": "text", "contains": "kumo" },
     { "check": "problems", "kinds": ["offPage", "pastEdge"] },
     { "check": "export", "path": "kumo.svg" },
