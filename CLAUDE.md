@@ -120,6 +120,11 @@ lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `AI.md`, `desi
 - [x] Builds: kimchi's `suite-build.yml` (app=nori) builds and signs; `scripts/publish-build.sh
       <version> <run-id>` checks the signatures, writes `latest.json` and `SHA256SUMS` and creates
       `nori-v<version>` in `ludovic111/lsuite-builds` (`--dry-run` first).
+- **Linux only during the beta** (owner's decision, 2026-10-08): macOS and Windows are "coming
+      soon". Their code stays in the source (GPUI backends, `bundle-macos.sh`,
+      `bundle-windows.sh`, the updater's platform keys), but CI, the release workflow and
+      `publish-build.sh` build and ship Linux only, and every release's `latest.json` lists only
+      Linux platforms.
 - [x] Agent harness (HARNESS.md, 0.2): 1 expert brief (`harness/brief.md`, ~1,300 words, the
       Agent panel's system prompt and nori-mcp's instructions; a test keeps it 800–1,500 words);
       2 eleven skills (`harness/skills/*.md`, MCP prompts and `nori://skills/<name>`; a test

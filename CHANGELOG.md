@@ -6,6 +6,8 @@ The agent harness: an agent working in nori now knows the trade, sees and measur
 made, and checks it before it says it's done — the built-in agent, Claude Code, Codex or any
 MCP client alike. And updates now come through lsuite.
 
+nori is in beta for **Linux** (AppImage and .deb); macOS and Windows are coming soon.
+
 - **An expert brief.** The agent's instructions are a designer's brief: retouching,
   compositing, vector illustration, type and grids, layout and print (bleed, margins, RGB and
   CMYK), colour, hierarchy and contrast, accessibility; the commands for the common jobs, the

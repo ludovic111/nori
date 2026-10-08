@@ -24,8 +24,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux only, on ludodesktop. macOS only when started by hand: gh workflow run CI --ref <branch>.
-        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-22.04", "macos-latest"]' || '["ubuntu-22.04"]') }}
+        # Linux only while lsuite is in beta (macOS and Windows are coming soon; their code stays).
+        os: [ubuntu-22.04]
     steps:
       - uses: actions/checkout@v4
         with:
