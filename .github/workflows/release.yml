@@ -27,9 +27,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: macOS (Apple Silicon), os: macos-latest, target: aarch64-apple-darwin, script: bundle-macos.sh }
-          - { name: macOS (Intel), os: macos-15-intel, target: x86_64-apple-darwin, script: bundle-macos.sh }
-          - { name: Windows, os: windows-latest, target: x86_64-pc-windows-msvc, script: bundle-windows.sh }
+          # Linux only while lsuite is in beta; macOS and Windows are coming soon:
+          # - { name: macOS (Apple Silicon), os: macos-latest, target: aarch64-apple-darwin, script: bundle-macos.sh }
+          # - { name: macOS (Intel), os: macos-15-intel, target: x86_64-apple-darwin, script: bundle-macos.sh }
+          # - { name: Windows, os: windows-latest, target: x86_64-pc-windows-msvc, script: bundle-windows.sh }
           - { name: Linux, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, script: bundle-linux.sh }
     defaults:
       run:
@@ -117,10 +118,6 @@ jobs:
         with:
           name: nori-${{ matrix.target }}
           path: |
-            target/dist/nori-macos-*.dmg
-            target/dist/nori-macos-*.app.tar.gz
-            target/dist/nori-windows-*.exe
-            target/dist/nori-windows-*.zip
             target/dist/nori-linux-*.AppImage
             target/dist/nori-linux-*.deb
             target/dist/*.sig
@@ -153,9 +150,8 @@ jobs:
           ### Download
           Download the build for your system below.
 
-          - **macOS**: `nori_aarch64.dmg` (Apple Silicon) or `nori_x64.dmg` (Intel).
-          - **Windows**: `nori_x64-setup.exe` (installer) or `nori_x64-portable.zip`.
           - **Linux**: `nori_amd64.AppImage` or `nori_amd64.deb`.
+          - **macOS and Windows**: coming soon (lsuite is in beta on Linux).
           NOTES
           (cd dist && sha256sum nori-* > SHA256SUMS)
           ls -l dist

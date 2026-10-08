@@ -14,6 +14,11 @@
 #   --dry-run   do everything but create the release (the files stay in a folder it prints)
 #   --replace   the release exists already: upload over its files
 #
+# Linux only during lsuite's beta (macOS and Windows are coming soon): only the targets in
+# NORI_TARGETS (default x86_64-unknown-linux-gnu) are taken, and their jobs must have succeeded,
+# so a run cancelled after its Linux job (or one that built other platforms too) still publishes
+# Linux alone. latest.json then lists only those platforms.
+#
 # Needs gh (signed in, with access to both repositories) and cargo. SHA256SUMS is signed too
 # (SHA256SUMS.sig) when TAURI_SIGNING_PRIVATE_KEY holds nori's update key. NORI_BUILD_REPO and
 # LSUITE_BUILDS_REPO override the repositories (for a test run).
@@ -30,7 +35,7 @@ for arg in "$@"; do
     --dry-run) dry_run=1 ;;
     --replace) replace=1 ;;
     -h | --help)
-      sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+      awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
       exit 0
       ;;
     -*) die "unknown option $arg" ;;
@@ -48,6 +53,7 @@ version="${version#v}"
 
 build_repo="${NORI_BUILD_REPO:-ludovic111/kimchi}"
 builds_repo="${LSUITE_BUILDS_REPO:-ludovic111/lsuite-builds}"
+read -r -a targets <<< "${NORI_TARGETS:-x86_64-unknown-linux-gnu}"
 tag="nori-v$version"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 command -v gh > /dev/null || die "gh (GitHub CLI) is needed"
@@ -58,19 +64,24 @@ if [ "$workspace_version" != "$version" ]; then
   echo "publish-build: note: this checkout is $workspace_version; the files are checked against $version" >&2
 fi
 
-# The run: kimchi's suite build, finished and green, with nori's artifacts.
-read -r workflow status conclusion url < <(gh run view "$run_id" -R "$build_repo" --json workflowName,status,conclusion,url \
-  --jq '[(.workflowName | gsub(" "; "_")), .status, (.conclusion // "none"), .url] | @tsv')
+# The run: kimchi's suite build, finished, with a green job and an artifact for each target.
+read -r workflow status url < <(gh run view "$run_id" -R "$build_repo" --json workflowName,status,url \
+  --jq '[(.workflowName | gsub(" "; "_")), .status, .url] | @tsv')
 [ "$workflow" = "Suite_release_build" ] || die "run $run_id of $build_repo is \"${workflow//_/ }\", not the suite release build"
 [ "$status" = "completed" ] || die "run $run_id is still $status: wait for it ($url)"
-[ "$conclusion" = "success" ] || die "run $run_id ended in $conclusion: publish only a green build ($url)"
 artifacts=$(gh api "repos/$build_repo/actions/runs/$run_id/artifacts" --jq '.artifacts[] | select(.expired | not) | .name')
-echo "$artifacts" | grep -q '^nori-' || die "run $run_id has no nori-* artifacts (was it run with app=nori? artifacts: $(echo "$artifacts" | tr '\n' ' '))"
+for target in "${targets[@]}"; do
+  job=$(gh run view "$run_id" -R "$build_repo" --json jobs --jq ".jobs[] | select(.name == \"nori · $target\") | .conclusion")
+  [ "$job" = "success" ] || die "run $run_id has no green \"nori · $target\" job (${job:-none}): publish only a green build ($url)"
+  echo "$artifacts" | grep -qx "nori-$target" || die "run $run_id has no nori-$target artifact (artifacts: $(echo "$artifacts" | tr '\n' ' '))"
+done
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/nori-publish-XXXXXX")"
 if [ "$dry_run" -eq 0 ]; then trap 'rm -rf "$work"' EXIT; fi
 echo "Downloading the nori artifacts of run $run_id ($url)…"
-gh run download "$run_id" -R "$build_repo" -p 'nori-*' -D "$work/artifacts"
+for target in "${targets[@]}"; do
+  gh run download "$run_id" -R "$build_repo" -n "nori-$target" -D "$work/artifacts/$target"
+done
 mkdir -p "$work/release"
 while IFS= read -r -d '' f; do
   name="$(basename "$f")"
