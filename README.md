@@ -53,15 +53,15 @@ nori is in beta for **Linux**; macOS and Windows are coming soon. Download the f
 | Linux | `nori_amd64.AppImage` or `nori_amd64.deb` |
 | macOS, Windows | coming soon |
 
-Signed app updates are available in Settings → Updates with your free lsuite account (signed in
-in the lsuite app), with checksums and signatures verified before installation.
+Signed app updates are available in Settings → Updates (no account needed); checksums and
+signatures are verified before installation.
 
 Or install it with the [lsuite launcher](https://lsuite.xyz/launcher).
 
 ## Drive it from AI and scripts
 
-The Agent panel (⌘J) runs **lsuite AI** (a demo for now: no payment is taken) or your own
-Claude Code, Codex, Anthropic or OpenAI key, or a model on Ollama. It works through the same
+The Agent panel (⌘J) runs the model you already have: your own Claude Code, Codex, Anthropic or
+OpenAI key, or a model on Ollama or any OpenAI-compatible server. It works through the same
 commands as the window; each change is a step you can undo, and a run can be reverted at once.
 `nori-mcp` gives every command to any MCP client; `nori-cli` to scripts. Every agent gets the
 same harness: a designer's brief, eleven skills (poster, retouch, logo, booklet, brand kit…), a
@@ -106,7 +106,7 @@ crates/
   nori-render     the renderer: tiled compositing, blend modes, adjustments, filters, the brush engine, transforms and text
   nori-io         pictures in and out, PSD and OpenRaster layers, SVG vectors in and out, PDF out, brushes and swatches
   nori-control    the command registry: one named, validated set of commands shared by the window, the agent, the CLI and MCP
-  nori-agent      the built-in agent: lsuite AI or the person's own model (Claude Code, Codex, API keys, local) over the command registry
+  nori-agent      the built-in agent: the person's own model (Claude Code, Codex, API keys, local) over the command registry
   nori-plugin     the plugin SDK: a frozen C ABI for filters that work on RGBA f32 tiles with typed parameters
   nori-desktop    the window (GPUI), binary `nori`
   nori-cli        `nori-cli`: every registry command, on the running app or on a .nori file

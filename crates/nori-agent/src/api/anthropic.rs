@@ -1,5 +1,4 @@
-//! Anthropic Messages API: streamed text and tool use over server-sent events. lsuite AI
-//! speaks it too, at `<server>/api/ai` with the account's token as the key.
+//! Anthropic Messages API: streamed text and tool use over server-sent events.
 //!
 //! Thinking blocks (on by default on current models) are kept verbatim as
 //! [`Part::Opaque`] and replayed unchanged, as the API requires within a tool
@@ -10,7 +9,6 @@ use serde_json::{Value, json};
 
 use super::{Api, Call, Step, parse_args};
 use crate::http::{self, Lines};
-use crate::status::Action;
 use crate::tools::ToolSet;
 use crate::{Message, Part, ProviderKind, Role, Run, ToolDef};
 
@@ -57,8 +55,7 @@ pub(super) fn wire(messages: &[Message]) -> Vec<Value> {
                     }
                     Part::Image { call: Some(c), .. } if results.contains(&c.as_str()) => None,
                     Part::Image { media_type, data, .. } => Some(image(media_type, data)),
-                    // lsuite AI is Anthropic's API: their thinking blocks replay to either.
-                    Part::Opaque { provider: ProviderKind::Anthropic | ProviderKind::Lsuite, block } => Some(block.clone()),
+                    Part::Opaque { provider: ProviderKind::Anthropic, block } => Some(block.clone()),
                     Part::Opaque { .. } => None,
                     Part::Context { text } => Some(json!({ "type": "text", "text": text })),
                 })
@@ -88,20 +85,14 @@ pub(super) async fn step(api: &Api, run: &Run, set: &ToolSet, messages: &[Messag
         "messages": wire(messages),
         "stream": true,
     });
-    if api.base == ProviderKind::Anthropic.default_base_url() || api.kind == ProviderKind::Lsuite {
+    if api.base == ProviderKind::Anthropic.default_base_url() {
         // Caches the conversation so far for the next round of the loop.
         body["cache_control"] = json!({ "type": "ephemeral" });
     }
     let key = api.key.clone().unwrap_or_default();
     let url = format!("{}/v1/messages", api.base);
     let label = api.label();
-    let response = match http::post(&run.cancel, &label, || api.http.post(&url).header("x-api-key", &key).header("anthropic-version", VERSION), &body).await {
-        Ok(r) => r,
-        Err(e) => {
-            run.set_action(action_for(api.kind, e.manage_url.as_deref(), e.status));
-            return Err(e.message);
-        }
-    };
+    let response = http::post(&run.cancel, &label, || api.http.post(&url).header("x-api-key", &key).header("anthropic-version", VERSION), &body).await?;
 
     let mut lines = Lines::new(response);
     let mut blocks: Vec<Block> = vec![];
@@ -168,10 +159,6 @@ pub(super) async fn step(api: &Api, run: &Run, set: &ToolSet, messages: &[Messag
             "error" => {
                 let e = &event["error"];
                 let message = e["message"].as_str().unwrap_or("unknown");
-                if let Some(manage) = e["manage_url"].as_str() {
-                    run.set_action(action_for(api.kind, Some(manage), None));
-                    return Err(message.to_string());
-                }
                 return Err(format!("{label} error: {message}"));
             }
             _ => {}
@@ -215,13 +202,4 @@ pub(super) async fn step(api: &Api, run: &Run, set: &ToolSet, messages: &[Messag
         calls.clear();
     }
     Ok(Step { parts, calls })
-}
-
-/// What the person can do about a refused request: manage the lsuite plan, or sign in again.
-fn action_for(kind: ProviderKind, manage_url: Option<&str>, status: Option<u16>) -> Option<Action> {
-    match (manage_url, status) {
-        (Some(url), _) => Action::link("Manage plan", url),
-        (None, Some(401)) if kind == ProviderKind::Lsuite => Action::call("Sign in to lsuite AI", "account.signIn"),
-        _ => None,
-    }
 }

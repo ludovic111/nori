@@ -157,8 +157,6 @@ pub enum Event {
     SettingsChanged,
     /// Colours, brushes or swatches changed.
     ToolsChanged,
-    /// The lsuite account (signed in, out, plan).
-    AccountChanged,
     /// Plugins were found, loaded, switched or removed.
     PluginsChanged,
     /// Something being done in the background (export, filter, build) progressed.
@@ -231,8 +229,6 @@ pub struct Session {
     pub brushes: RwLock<Vec<Arc<nori_render::brush::TipImage>>>,
     pub swatches: RwLock<Vec<nori_io::assets::Swatch>>,
     pub plugins: crate::plugins::Host,
-    /// Where the sign-in in progress listens (`account.signIn`), to cancel it.
-    pub(crate) sign_in: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Session {
@@ -270,7 +266,6 @@ impl Session {
             brushes: RwLock::new(vec![]),
             swatches: RwLock::new(vec![]),
             plugins,
-            sign_in: Mutex::new(None),
         });
         crate::commands::color::load_assets(&session);
         session.plugins.rescan(&session.data_dir);

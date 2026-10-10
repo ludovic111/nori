@@ -1,7 +1,6 @@
 //! Every command's spec and handler. Specs are listed here in one table so the docs, the CLI
 //! help and the MCP tools are generated in a stable order.
 
-pub mod account;
 pub mod agent;
 pub mod app;
 pub mod color;
@@ -404,11 +403,6 @@ pub static SPECS: &[Spec] = &[
         opt("duration", Number, "Seconds on the timeline (default kimchi's for pictures)."),
         opt("scale", Number, "Size multiplier."),
     ]).perm(Perm::Files),
-    // ---- account (lsuite AI) --------------------------------------------------------------------
-    query("account.status", "The lsuite account on this computer (shared by every lsuite app): signed in or not, email, plan, the AI allowance used and when it resets.", &[opt("refresh", Boolean, "Ask the server again now.")]),
-    edit("account.signIn", "Sign in to lsuite AI: opens the browser to sign in and connect nori (the account is shared with every lsuite app), or takes a key (lsk_…) shown on the account page.", &[opt("key", String, "An lsk_… key instead of the browser.")]).perm(Perm::PersonOnly),
-    edit("account.signOut", "Sign out of lsuite AI (every lsuite app on this computer).", &[]).perm(Perm::PersonOnly),
-    query("account.plans", "lsuite AI plans, prices (a demo: nothing is charged), models and monthly allowances, from the server.", &[]),
     // ---- plugin ---------------------------------------------------------------------------------
     query("plugin.list", "Plugins: stock filters, installed lsuite plugins (with format, version, path, enabled) and the formats nori loads (.cube LUTs, .gbr brushes, .ase swatches).", &[]),
     query("plugin.info", "One plugin: parameters, description, where it came from.", &[req("id", String, "Plugin id.")]),
@@ -442,7 +436,7 @@ pub static SPECS: &[Spec] = &[
     query("app.commands", "Every command with its parameters (what this list is generated from).", &[opt("family", String, "Only this family (doc, layer, vector…).")]),
     query("app.settings", "Every setting and its value.", &[]),
     edit("app.setSetting", "Change a setting by its dotted key (appearance.mode, tools.brush.size…). The agent's provider and permissions stay with the person.", &[req("key", String, "Dotted key from app.settings."), req("value", Any, "New value, same type.")]).perm(Perm::Settings),
-    query("app.checkUpdates", "Look for a newer nori, through lsuite (the free lsuite account gets updates; signed out, the status says to sign in in the lsuite app).", &[]),
+    query("app.checkUpdates", "Look for a newer nori, through lsuite (no account needed).", &[]),
     query("app.updateStatus", "Read update availability, download progress and restart state.", &[]),
     edit("app.installUpdate", "Download, verify and install the available signed update.", &[]).perm(Perm::AppControl),
     edit("app.restart", "Restart nori to use an installed update.", &[]).perm(Perm::AppControl).window(),
@@ -452,8 +446,8 @@ pub static SPECS: &[Spec] = &[
     edit("app.notify", "Show a short message in the window.", &[req("text", String, "The message."), opt("kind", String, "info, success or error.")]).window(),
     edit("app.quit", "Quit nori.", &[]).perm(Perm::AppControl).window(),
     // ---- agent ----------------------------------------------------------------------------------
-    query("agent.providers", "What can run the built-in agent: lsuite AI (no setup: sign in), Claude Code and Codex on this computer, the Anthropic and OpenAI APIs, Ollama and OpenAI-compatible servers; whether each is ready and what to do next.", &[]).window(),
-    edit("agent.setProvider", "Choose what runs the built-in agent.", &[req("provider", String, "lsuite, claude-code, codex, anthropic, openai, ollama or openai-compatible."), opt("model", String, "Model id (empty: the provider's default)."), opt("baseUrl", String, "Server address for Ollama or OpenAI-compatible.")]).perm(Perm::PersonOnly),
+    query("agent.providers", "What can run the built-in agent: Claude Code and Codex on this computer, the Anthropic and OpenAI APIs, Ollama and OpenAI-compatible servers; whether each is ready and what to do next.", &[]).window(),
+    edit("agent.setProvider", "Choose what runs the built-in agent.", &[req("provider", String, "claude-code, codex, anthropic, openai, ollama or openai-compatible."), opt("model", String, "Model id (empty: the provider's default)."), opt("baseUrl", String, "Server address for Ollama or OpenAI-compatible.")]).perm(Perm::PersonOnly),
     edit("agent.setKey", "Store an API key for a provider in the system keychain (or remove it with an empty key).", &[req("provider", String, "anthropic, openai or openai-compatible."), req("key", String, "The key; empty removes it.")]).perm(Perm::PersonOnly),
     edit("agent.send", "Ask the built-in agent (the Agent panel) to do something, in words. It runs commands like any client (permissions apply) and shows them as cards. Returns the run at once, or once it ends with wait.", &[
         req("prompt", String, "The request, e.g. \"Make a poster: a big title, a photo, a date\"."),
@@ -477,7 +471,7 @@ pub static SPECS: &[Spec] = &[
     query("ui.state", "What the window shows: home or editor, the tool, zoom, open panels and dialogs, theme.", &[]),
     edit("ui.setTool", "Pick a tool in the window: move, select (rectangle), ellipseSelect, lasso, wand, crop, eyedropper, brush, eraser, fill, gradient, pen, direct, shape, text, frame, hand, zoom.", &[req("tool", String, "The tool.")]).window(),
     edit("ui.zoom", "Zoom the canvas: a level (1 = 100 %), fit, or 100 %.", &[opt("zoom", Number, "Zoom level (0.02–64)."), opt("fit", Boolean, "Fit the page in the window.")]).window(),
-    edit("ui.showPanel", "Open or close a panel or dialog: agent, plugins, settings, export, shortcuts, whatsNew, onboarding, pages, layers; or home.", &[req("panel", String, "Panel name."), opt("open", Boolean, "false closes it."), opt("section", String, "For settings: agent, appearance, plugins, account, about.")]).window(),
+    edit("ui.showPanel", "Open or close a panel or dialog: agent, plugins, settings, export, shortcuts, whatsNew, onboarding, pages, layers; or home.", &[req("panel", String, "Panel name."), opt("open", Boolean, "false closes it."), opt("section", String, "For settings: agent, appearance, updates, about.")]).window(),
     edit("ui.action", "Do what a keyboard shortcut or menu item does, by its action name (Undo, Redo, ZoomIn, ToggleAgent, NewDocument, Export…).", &[req("action", String, "Action name.")]).window(),
     edit("ui.screenshot", "Save a PNG of the window and return its path (macOS).", &[opt("path", String, "Destination .png.")]).perm(Perm::Files).window(),
 ];
@@ -497,7 +491,6 @@ pub async fn dispatch(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
         "history" => Box::pin(history::run(s, cx, a)).await,
         "export" => Box::pin(export::run(s, cx, a)).await,
         "handoff" => Box::pin(handoff::run(s, cx, a)).await,
-        "account" => Box::pin(account::run(s, cx, a)).await,
         "plugin" => Box::pin(plugin::run(s, cx, a)).await,
         "app" => Box::pin(app::run(s, cx, a)).await,
         "agent" => Box::pin(agent::run(s, cx, a)).await,

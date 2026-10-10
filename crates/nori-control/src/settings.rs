@@ -36,9 +36,9 @@ pub struct OnboardingSettings {
     pub coming_from: Vec<String>,
 }
 
-/// What can run the built-in agent (`settings.agent.provider`): lsuite AI (the subscription,
-/// no setup), the person's coding CLIs, model APIs, and local servers.
-pub const AGENT_PROVIDERS: &[&str] = &["lsuite", "claude-code", "codex", "anthropic", "openai", "ollama", "openai-compatible"];
+/// What can run the built-in agent (`settings.agent.provider`): the person's coding CLIs, model
+/// APIs, and local servers.
+pub const AGENT_PROVIDERS: &[&str] = &["claude-code", "codex", "anthropic", "openai", "ollama", "openai-compatible"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
@@ -56,7 +56,7 @@ pub struct AgentSettings {
 
 impl Default for AgentSettings {
     fn default() -> Self {
-        Self { enabled: true, permissions: Permissions::default(), provider: "lsuite".into(), model: String::new(), base_url: String::new() }
+        Self { enabled: true, permissions: Permissions::default(), provider: "claude-code".into(), model: String::new(), base_url: String::new() }
     }
 }
 
@@ -200,8 +200,14 @@ impl Settings {
     pub fn load(dir: &Path) -> Self {
         let path = dir.join("settings.json");
         let Ok(bytes) = std::fs::read(&path) else { return Self::default() };
-        match serde_json::from_slice(&bytes) {
-            Ok(s) => s,
+        match serde_json::from_slice::<Self>(&bytes) {
+            Ok(mut s) => {
+                // A provider nori no longer has (lsuite AI, until lsuite went free) is the default again.
+                if !AGENT_PROVIDERS.contains(&s.agent.provider.as_str()) {
+                    s.agent.provider = AgentSettings::default().provider;
+                }
+                s
+            }
             Err(e) => {
                 tracing::warn!("{} isn't valid ({e}); kept as settings.json.bad, using the defaults", path.display());
                 let _ = std::fs::rename(&path, dir.join("settings.json.bad"));

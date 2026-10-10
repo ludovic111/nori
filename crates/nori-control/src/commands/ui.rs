@@ -9,7 +9,7 @@ use crate::registry::{Args, Ctx};
 use crate::session::{CmdResult, Session};
 
 pub const TOOLS: &[&str] = &["move", "select", "ellipseSelect", "lasso", "wand", "crop", "eyedropper", "brush", "eraser", "fill", "gradient", "pen", "direct", "shape", "text", "frame", "hand", "zoom"];
-pub const PANELS: &[&str] = &["agent", "plugins", "settings", "export", "shortcuts", "whatsNew", "onboarding", "pages", "layers", "home", "account"];
+pub const PANELS: &[&str] = &["agent", "plugins", "settings", "export", "shortcuts", "whatsNew", "onboarding", "pages", "layers", "home"];
 
 pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
     match cx.spec.name {

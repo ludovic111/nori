@@ -29,7 +29,6 @@ use uuid::Uuid;
 mod storage;
 pub use storage::ConversationInfo;
 
-use crate::status::Action;
 use crate::{Agent, AgentConfig, AgentEvent, Conversation, ProviderKind, RunHandle};
 
 /// Entries kept in the conversation; older ones go (indices keep counting).
@@ -65,9 +64,6 @@ pub struct RunInfo {
     /// The agent's reply, as streamed.
     pub reply: String,
     pub error: Option<String>,
-    /// The one thing to do about the error (Manage plan, Sign in to lsuite AI).
-    #[serde(default)]
-    pub action: Option<Action>,
     /// Taken before its first change; what agent.revert goes back to.
     pub checkpoint: Option<u64>,
     /// Successful commands that could change the document.
@@ -114,14 +110,12 @@ pub enum Entry {
     Assistant { text: String, run: u64 },
     /// One command, run by the agent (`run`) or by an MCP client or the CLI (`run` null).
     Command { record: Box<CommandRecord>, result: Option<Value>, run: Option<u64> },
-    /// How a run ended, with the one thing to do about an error when there is one.
+    /// How a run ended.
     #[serde(rename_all = "camelCase")]
     Outcome {
         run: u64,
         state: RunState,
         error: Option<String>,
-        #[serde(default)]
-        action: Option<Action>,
         changes: usize,
         seconds: f64,
         tokens: u64,
@@ -364,7 +358,7 @@ impl Host {
                 // Changes MCP clients and the CLI make to the document show as cards; the
                 // window's own don't, nor what they only look at or do around the document.
                 let shown = record.mutates
-                    && !["ui.", "app.", "account.", "plugin."].iter().any(|p| record.command.starts_with(p))
+                    && !["ui.", "app.", "plugin."].iter().any(|p| record.command.starts_with(p))
                     && !matches!(record.command.as_str(), "layer.select" | "page.select");
                 if record.source != Source::Window && shown {
                     st.command(record, None, None);
@@ -399,7 +393,7 @@ impl Host {
             if let Some((run, handle)) = st.active.take() {
                 handle.cancel();
                 st.conversation = handle.conversation();
-                finish(&mut st, run, RunState::Cancelled, None, None, handle.checkpoint(), handle.changes());
+                finish(&mut st, run, RunState::Cancelled, None, handle.checkpoint(), handle.changes());
             }
             st.save_current();
             // Opening another document replaces the editor and its undo history.
@@ -451,7 +445,6 @@ impl Host {
             activity: Some(format!("Starting {}…", config.provider.label())),
             reply: String::new(),
             error: None,
-            action: None,
             checkpoint: None,
             changes: 0,
             commands: 0,
@@ -517,19 +510,19 @@ impl Host {
                     }
                     st.push(Entry::Assistant { text: summary, run: id });
                 }
-                finish(&mut st, id, RunState::Done, None, None, checkpoint, changes);
+                finish(&mut st, id, RunState::Done, None, checkpoint, changes);
             }
-            AgentEvent::Error { message, checkpoint, changes, action } if current => {
+            AgentEvent::Error { message, checkpoint, changes } if current => {
                 if let Some((_, h)) = &st.active {
                     st.conversation = h.conversation();
                 }
-                finish(&mut st, id, RunState::Error, Some(message), action, checkpoint, changes);
+                finish(&mut st, id, RunState::Error, Some(message), checkpoint, changes);
             }
             AgentEvent::Cancelled { checkpoint, changes } if current => {
                 if let Some((_, h)) = &st.active {
                     st.conversation = h.conversation();
                 }
-                finish(&mut st, id, RunState::Cancelled, None, None, checkpoint, changes);
+                finish(&mut st, id, RunState::Cancelled, None, checkpoint, changes);
             }
             _ => return,
         }
@@ -815,18 +808,17 @@ fn parse_provider(id: &str) -> CmdResult<ProviderKind> {
     })
 }
 
-fn finish(st: &mut State, id: u64, state: RunState, error: Option<String>, action: Option<Action>, checkpoint: Option<u64>, changes: usize) {
+fn finish(st: &mut State, id: u64, state: RunState, error: Option<String>, checkpoint: Option<u64>, changes: usize) {
     st.active = None;
     let Some(r) = st.run_mut(id) else { return };
     r.state = state;
     r.activity = None;
     r.error = error.clone();
-    r.action = action.clone();
     r.checkpoint = checkpoint;
     r.changes = changes;
     r.finished_at = Some(Utc::now());
     let (seconds, tokens) = (r.seconds(), r.input_tokens + r.output_tokens);
-    st.push(Entry::Outcome { run: id, state, error, action, changes, seconds, tokens });
+    st.push(Entry::Outcome { run: id, state, error, changes, seconds, tokens });
 }
 
 impl AgentHost for Host {

@@ -1,9 +1,8 @@
 //! Which providers the panel can use right now, each with a sentence for the person and the one
 //! thing to do next when it can't be used yet.
 //!
-//! Local checks only, plus lsuite AI's account (`/api/account/me`: plan and allowance): a CLI
-//! found and signed in, a key present, a local server answering. No model request is sent; the
-//! first message is what proves model access.
+//! Local checks only: a CLI found and signed in, a key present, a local server answering. No
+//! model request is sent; the first message is what proves model access.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -26,10 +25,8 @@ pub enum Next {
     Key,
     /// Install the CLI or the app.
     Install,
-    /// Sign in (to lsuite AI, or to the CLI).
+    /// Sign in to the CLI.
     SignIn,
-    /// Pick or change the lsuite AI plan (Free has none; the allowance is used up).
-    Plan,
     /// Start the local server.
     Start,
     /// Give the server's address.
@@ -40,8 +37,7 @@ pub enum Next {
     Restart,
 }
 
-/// A button for the next thing to do: a link to open, a command to copy into a terminal, or a
-/// nori command to run (`account.signIn`).
+/// A button for the next thing to do: a link to open, or a command to copy into a terminal.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Action {
@@ -51,22 +47,15 @@ pub struct Action {
     /// A shell command to copy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
-    /// A nori command the button runs (`account.signIn`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub call: Option<String>,
 }
 
 impl Action {
     pub fn link(label: &str, url: &str) -> Option<Self> {
-        Some(Self { label: label.into(), url: Some(url.into()), command: None, call: None })
+        Some(Self { label: label.into(), url: Some(url.into()), command: None })
     }
 
     pub fn run(label: &str, command: &str) -> Option<Self> {
-        Some(Self { label: label.into(), url: None, command: Some(command.into()), call: None })
-    }
-
-    pub fn call(label: &str, command: &str) -> Option<Self> {
-        Some(Self { label: label.into(), url: None, command: None, call: Some(command.into()) })
+        Some(Self { label: label.into(), url: None, command: Some(command.into()) })
     }
 }
 
@@ -88,33 +77,12 @@ pub struct KeyStatus {
     pub hint: &'static str,
 }
 
-/// The lsuite account behind lsuite AI, as the panel shows it (`Pro · 38 % used · resets 1 Nov`,
-/// Manage plan, Sign out).
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AccountStatus {
-    pub email: String,
-    pub name: String,
-    /// Plan id (`free`, `plus`, `pro`, `studio`) and its name.
-    pub plan: String,
-    pub plan_name: String,
-    /// Credits used this month and the plan's allowance (when the server said).
-    pub used: Option<f64>,
-    pub limit: Option<f64>,
-    pub percent: Option<f64>,
-    pub resets_at: Option<String>,
-    /// "Pro · 38 % used · resets 1 Nov".
-    pub summary: String,
-    /// `<server>/account`.
-    pub manage_url: String,
-}
-
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStatus {
     pub provider: ProviderKind,
     pub label: &'static str,
-    /// `lsuite`, `cli` (on this computer), `api` (model APIs) or `local` (local servers).
+    /// `cli` (on this computer), `api` (model APIs) or `local` (local servers).
     pub group: Group,
     pub group_label: &'static str,
     /// One plain line on what it is.
@@ -127,18 +95,16 @@ pub struct ProviderStatus {
     pub message: String,
     /// What to do next when it isn't ready.
     pub next: Option<Next>,
-    /// The button for it (for lsuite AI signed in: Manage plan).
+    /// The button for it.
     pub action: Option<Action>,
     /// The executable or address that was checked.
     pub detail: String,
     /// Model used when `settings.agent.model` is empty (empty: the provider decides).
     pub default_model: String,
-    /// Models a local server or the lsuite plan has; `agent.models` lists anyone's.
+    /// Models a local server has; `agent.models` lists anyone's.
     pub models: Vec<String>,
     /// The key, for the providers that take one.
     pub key: Option<KeyStatus>,
-    /// lsuite AI's account, when signed in.
-    pub account: Option<AccountStatus>,
     /// The address used (the setting, else the default).
     pub base_url: String,
     pub default_base_url: &'static str,
@@ -182,7 +148,6 @@ pub async fn status_of(session: &Arc<Session>, kind: ProviderKind) -> ProviderSt
         default_model: kind.default_model().to_string(),
         models: vec![],
         key: key.clone(),
-        account: None,
         base_url: config.base_url(),
         default_base_url: info.default_base_url,
         needs_base_url: info.needs_base_url,
@@ -191,7 +156,6 @@ pub async fn status_of(session: &Arc<Session>, kind: ProviderKind) -> ProviderSt
         website: info.website,
     };
     match kind {
-        ProviderKind::Lsuite => lsuite_status(&mut s).await,
         ProviderKind::ClaudeCode | ProviderKind::Codex => cli_status(session, kind, &mut s).await,
         ProviderKind::Ollama => ollama_status(&config, &mut s).await,
         ProviderKind::OpenAiCompatible => compatible_status(session, &config, &mut s).await,
@@ -212,97 +176,6 @@ fn key_status(session: &Session, kind: ProviderKind) -> Option<KeyStatus> {
         KeySource::Env(var) => var.to_string(),
     });
     Some(KeyStatus { required: spec.required, saved: source.as_deref() == Some("keychain"), source, env: spec.env.to_vec(), url: spec.url, hint: spec.hint })
-}
-
-/// `1 Nov` for `2026-11-01T00:00:00Z`.
-fn day(rfc3339: &str) -> Option<String> {
-    chrono::DateTime::parse_from_rfc3339(rfc3339).ok().map(|d| d.format("%-d %b").to_string())
-}
-
-/// What `/api/account/me` says, for the panel.
-pub(crate) fn account_status(me: &Value, email: &str, manage_url: &str) -> AccountStatus {
-    let plan = me["plan"].as_str().unwrap_or("").to_string();
-    let plan_name = me["planName"].as_str().map(str::to_string).unwrap_or_else(|| {
-        let mut c = plan.chars();
-        c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
-    });
-    let u = &me["usage"];
-    let (used, limit) = (u["used"].as_f64(), u["limit"].as_f64());
-    let percent = u["percent"].as_f64().or_else(|| Some(used? / limit.filter(|l| *l > 0.0)? * 100.0)).map(|p| p.round());
-    let resets_at = u["resetsAt"].as_str().map(str::to_string);
-    let mut summary = plan_name.clone();
-    if let Some(p) = percent.filter(|_| limit.is_some_and(|l| l > 0.0)) {
-        summary.push_str(&format!(" · {p} % used"));
-    }
-    if let Some(d) = resets_at.as_deref().and_then(day) {
-        summary.push_str(&format!(" · resets {d}"));
-    }
-    AccountStatus {
-        email: me["email"].as_str().unwrap_or(email).to_string(),
-        name: me["name"].as_str().unwrap_or("").to_string(),
-        plan,
-        plan_name,
-        used,
-        limit,
-        percent,
-        resets_at,
-        summary,
-        manage_url: me["manageUrl"].as_str().unwrap_or(manage_url).to_string(),
-    }
-}
-
-async fn lsuite_status(s: &mut ProviderStatus) {
-    let server = nori_control::account::server();
-    s.detail = server.clone();
-    let Some(account) = nori_control::account::read() else {
-        s.message = "No setup. Sign in and your agent works.".into();
-        s.next = Some(Next::SignIn);
-        s.action = Action::call("Sign in to lsuite AI", "account.signIn");
-        return;
-    };
-    let manage = format!("{server}/account");
-    match tokio::time::timeout(Duration::from_secs(5), nori_control::account::me(&server, &account.token)).await {
-        Ok(Ok(me)) => {
-            let a = account_status(&me, &account.email, &manage);
-            if let Some(models) = me["models"].as_array() {
-                s.models = models.iter().filter_map(|m| m.as_str().or_else(|| m["id"].as_str())).map(str::to_string).collect();
-            }
-            if let Some(m) = me["defaultModel"].as_str().filter(|m| !m.is_empty()) {
-                s.default_model = m.to_string();
-            }
-            let out = a.limit.is_some_and(|l| l > 0.0) && a.used.zip(a.limit).is_some_and(|(u, l)| u >= l);
-            if a.plan == "free" || me["status"] == "none" {
-                s.message = format!("Signed in as {}. lsuite AI needs a plan: the account is on Free (bring your own provider below).", a.email);
-                s.next = Some(Next::Plan);
-                s.action = Action::link("Choose a plan", &a.manage_url);
-            } else if out {
-                s.message = format!("{}. This month's allowance is used up.", a.summary);
-                s.next = Some(Next::Plan);
-                s.action = Action::link("Manage plan", &a.manage_url);
-            } else {
-                s.ready = true;
-                s.message = format!("Signed in as {}: {}.", a.email, a.summary);
-                s.action = Action::link("Manage plan", &a.manage_url);
-            }
-            s.account = Some(a);
-        }
-        Ok(Err(e)) if e.contains("sign in again") => {
-            s.message = e;
-            s.next = Some(Next::SignIn);
-            s.action = Action::call("Sign in to lsuite AI", "account.signIn");
-        }
-        // Offline, or the server is slow: the sign-in is there, the first message will tell.
-        Ok(Err(e)) => {
-            s.ready = true;
-            s.message = format!("Signed in as {}. Couldn't check the plan: {e}", account.email);
-            s.action = Action::link("Manage plan", &manage);
-        }
-        Err(_) => {
-            s.ready = true;
-            s.message = format!("Signed in as {}. {server} didn't answer in time to check the plan.", account.email);
-            s.action = Action::link("Manage plan", &manage);
-        }
-    }
 }
 
 /// `platform.openai.com/api-keys` for `https://platform.openai.com/api-keys`.

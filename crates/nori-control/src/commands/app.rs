@@ -58,7 +58,6 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
                 "comingFrom": st.onboarding.coming_from,
                 "apps": apps,
                 "agent": { "provider": st.agent.provider, "providers": crate::settings::AGENT_PROVIDERS },
-                "account": crate::commands::account::status(false).await,
             }))
         }
         "app.finishOnboarding" => {

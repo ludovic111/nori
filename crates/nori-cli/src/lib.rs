@@ -421,10 +421,6 @@ pub async fn doctor() -> Value {
         Some(p) => push("nori-mcp", true, p.display().to_string()),
         None => push("nori-mcp", false, "not next to nori-cli; `cargo build -p nori-mcp` or reinstall the app".into()),
     }
-    match nori_control::account::read() {
-        Some(a) => push("lsuite AI", true, format!("signed in as {} ({})", a.email, if a.plan.is_empty() { "no plan" } else { a.plan.as_str() })),
-        None => push("lsuite AI", true, "not signed in (nori-cli account.signIn, or another provider)".into()),
-    }
     let ok = checks.iter().all(|c| c["ok"] == true);
     json!({ "ok": ok, "checks": checks })
 }

@@ -192,10 +192,10 @@ fn live(run: &Run) -> Result<Live, String> {
     let label = run.config.provider.label();
     if run.session.bridge_port().is_none() {
         return Err(format!(
-            "{label} works through nori's live bridge, which isn't running. Restart nori, or choose lsuite AI or an API provider in Settings › Agent."
+            "{label} works through nori's live bridge, which isn't running. Restart nori, or choose an API provider in Settings › Agent."
         ));
     }
-    let mcp = mcp_executable().ok_or_else(|| format!("{label} needs nori-mcp, which wasn't found next to nori. Reinstall nori, or choose lsuite AI or an API provider in Settings › Agent."))?;
+    let mcp = mcp_executable().ok_or_else(|| format!("{label} needs nori-mcp, which wasn't found next to nori. Reinstall nori, or choose an API provider in Settings › Agent."))?;
     // A private bridge (`nori-cli agent`) writes its own control file.
     let control = run.session.bridge_control().unwrap_or_else(|| nori_control::bridge::control_path(&run.session.data_dir));
     Ok(Live { mcp, control })

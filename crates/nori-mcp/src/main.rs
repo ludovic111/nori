@@ -416,7 +416,7 @@ impl Server {
             ),
             Backend::Local { .. } => "nori-mcp, headless mode (the app isn't running): doc_open or doc_new first; export_file to write results. Commands that need the window are unavailable.".into(),
         };
-        let permissions = "Agent permissions (Settings › Agent › Permissions) decide whether you may open and write files, change settings, build plugins or control the app; API keys, the lsuite sign-in and the permissions stay with the person.";
+        let permissions = "Agent permissions (Settings › Agent › Permissions) decide whether you may open and write files, change settings, build plugins or control the app; API keys, the agent's provider and the permissions stay with the person.";
         format!("{}\n\n{permissions}", harness::mcp_instructions(&mode))
     }
 
@@ -502,7 +502,7 @@ fn tools() -> Vec<Value> {
                     "readOnlyHint": !spec.mutates,
                     "destructiveHint": destructive,
                     "idempotentHint": !spec.mutates,
-                    "openWorldHint": matches!(spec.family(), "handoff" | "account") || matches!(spec.name, "app.checkUpdates" | "agent.send"),
+                    "openWorldHint": spec.family() == "handoff" || matches!(spec.name, "app.checkUpdates" | "agent.send"),
                 },
             })
         })

@@ -1,6 +1,5 @@
 //! API keys live in the OS keychain (macOS Keychain, Windows Credential Manager, Secret
-//! Service on Linux), never in plain files. The lsuite AI token is the shared account file's
-//! (`account.rs`), not here.
+//! Service on Linux), never in plain files.
 
 use std::collections::HashMap;
 use std::sync::Arc;

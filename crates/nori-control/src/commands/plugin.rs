@@ -313,8 +313,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
                 env!("CARGO_PKG_VERSION"),
                 sdk.display().to_string().replace('\\', "/")
             );
-            let vendor = crate::account::read().map(|a| a.name).filter(|n| !n.is_empty()).unwrap_or_else(|| "Me".into());
-            let lib = TEMPLATE_LIB.replace("{ID}", &format!("local.nori.{name}")).replace("{NAME}", &title(&name)).replace("{VENDOR}", &vendor);
+            let lib = TEMPLATE_LIB.replace("{ID}", &format!("local.nori.{name}")).replace("{NAME}", &title(&name)).replace("{VENDOR}", "Me");
             let files = [("Cargo.toml", cargo), ("src/lib.rs", lib), ("plugin.toml", plugin_toml(&name))];
             for (rel, text) in &files {
                 let p = dir.join(rel);
@@ -386,6 +385,6 @@ pub fn install_rust() -> Result<(), String> {
     }
     #[cfg(not(unix))]
     {
-        crate::account::open_url("https://rustup.rs")
+        std::process::Command::new("cmd").args(["/C", "start", "", "https://rustup.rs"]).spawn().map(|_| ()).map_err(|e| format!("Couldn't open the browser ({e}). Open https://rustup.rs yourself."))
     }
 }

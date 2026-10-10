@@ -1,6 +1,6 @@
 [package]
 name = "nori-agent"
-description = "nori's built-in agent: lsuite AI or the person's own model (Claude Code, Codex, API keys, local) over the command registry"
+description = "nori's built-in agent: the person's own model (Claude Code, Codex, API keys, local) over the command registry"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

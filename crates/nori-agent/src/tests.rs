@@ -10,7 +10,7 @@ use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 use crate::*;
 
 /// A scratch `LSUITE_HOME` for the whole test run (set once: the environment is shared), so no
-/// test reads the account of the person running them.
+/// test reads the plugins or apps of the person running them.
 fn lsuite_home() -> &'static std::path::Path {
     static HOME: OnceLock<tempfile::TempDir> = OnceLock::new();
     HOME.get_or_init(|| {
@@ -18,29 +18,11 @@ fn lsuite_home() -> &'static std::path::Path {
         // SAFETY: set once, before any test reads them.
         unsafe {
             std::env::set_var("LSUITE_HOME", d.path());
-            std::env::remove_var("LSUITE_ACCOUNT_SERVER");
             std::env::set_var("NORI_NO_SYSTEM_FONTS", "1");
         }
         d
     })
     .path()
-}
-
-/// Tests that sign in or out of lsuite take turns (one account file for the run).
-static ACCOUNT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-fn sign_in(server: &str, token: &str) {
-    lsuite_home();
-    nori_control::account::write(&nori_control::account::Account {
-        format: 1,
-        server: server.into(),
-        email: "ada@example.com".into(),
-        name: "Ada".into(),
-        plan: "pro".into(),
-        token: token.into(),
-        signed_in_at: String::new(),
-    })
-    .unwrap();
 }
 
 fn session(dir: &std::path::Path) -> Arc<Session> {
@@ -356,7 +338,7 @@ fn trimmed_tool_sets_keep_the_core_and_name_real_commands() {
 #[test]
 fn settings_choose_the_provider() {
     let mut a = nori_control::settings::AgentSettings::default();
-    assert_eq!(AgentConfig::from_settings(&a).provider, ProviderKind::Lsuite);
+    assert_eq!(AgentConfig::from_settings(&a).provider, ProviderKind::ClaudeCode);
     a.provider = "anthropic".into();
     let c = AgentConfig::from_settings(&a);
     assert_eq!((c.provider, c.model(), c.base_url()), (ProviderKind::Anthropic, "claude-sonnet-5-5".to_string(), "https://api.anthropic.com".to_string()));
@@ -364,20 +346,21 @@ fn settings_choose_the_provider() {
     a.base_url = "http://box:11434/".into();
     assert_eq!(AgentConfig::from_settings(&a).base_url(), "http://box:11434");
     a.provider = "nonsense".into();
-    assert_eq!(AgentConfig::from_settings(&a).provider, ProviderKind::Lsuite);
+    assert_eq!(AgentConfig::from_settings(&a).provider, ProviderKind::ClaudeCode);
     assert_eq!(serde_json::to_value(ProviderKind::OpenAi).unwrap(), "openai");
-    lsuite_home();
-    assert!(AgentConfig::new(ProviderKind::Lsuite).base_url().ends_with("/api/ai"));
 }
 
 #[test]
 fn provider_ids_parse_from_what_people_type() {
     assert_eq!(ProviderKind::parse("Claude"), Some(ProviderKind::ClaudeCode));
-    assert_eq!(ProviderKind::parse("lsuite AI"), Some(ProviderKind::Lsuite));
+    assert_eq!(ProviderKind::parse("lsuite AI"), None, "lsuite AI is gone");
     assert_eq!(ProviderKind::parse("lm studio"), Some(ProviderKind::OpenAiCompatible));
     assert_eq!(ProviderKind::parse("claude_code"), Some(ProviderKind::ClaudeCode));
     assert_eq!(ProviderKind::parse("gemini"), None);
     assert_eq!(serde_json::to_value(ProviderKind::OpenAiCompatible).unwrap(), "openai-compatible");
+    // Conversations saved with lsuite AI (Anthropic's API) still load.
+    let saved: Part = serde_json::from_value(json!({ "type": "opaque", "provider": "lsuite", "block": { "type": "thinking" } })).unwrap();
+    assert!(matches!(saved, Part::Opaque { provider: ProviderKind::Anthropic, .. }));
     let key_ids: Vec<&str> = ProviderKind::ALL.iter().filter_map(|k| k.info().key.map(|k| k.id)).collect();
     assert_eq!(key_ids, nori_control::commands::agent::AGENT_KEY_IDS, "the agent and agent.setKey keep keys under the same ids");
     for id in nori_control::commands::agent::AGENT_KEY_IDS {
@@ -537,10 +520,8 @@ async fn a_cli_without_nori_tools_stops_with_a_reason() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn provider_status_says_what_is_usable() {
-    let _account = ACCOUNT.lock().await;
     let dir = tempfile::tempdir().unwrap();
     let s = session(dir.path());
-    nori_control::account::remove();
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/tags"))
@@ -555,7 +536,7 @@ async fn provider_status_says_what_is_usable() {
     s.set_secret("openai", Some("sk-test")).unwrap();
     let all = provider_status(&s).await;
     assert_eq!(all.len(), ProviderKind::ALL.len());
-    assert_eq!(all[0].provider, ProviderKind::Lsuite, "lsuite AI comes first");
+    assert_eq!(all[0].provider, ProviderKind::ClaudeCode, "the CLIs come first");
     let get = |k| all.iter().find(|p| p.provider == k).unwrap();
     let ollama = get(ProviderKind::Ollama);
     assert!(ollama.ready && ollama.active && ollama.on_device, "{ollama:?}");
@@ -564,115 +545,6 @@ async fn provider_status_says_what_is_usable() {
     // No bridge in a headless session: the CLIs can't reach nori, whatever is installed.
     let claude = get(ProviderKind::ClaudeCode);
     assert!(!claude.ready && !claude.message.is_empty(), "{claude:?}");
-    // Signed out of lsuite: one button, which runs account.signIn.
-    let lsuite = get(ProviderKind::Lsuite);
-    assert!(!lsuite.ready && lsuite.next == Some(Next::SignIn), "{lsuite:?}");
-    assert_eq!(lsuite.action.as_ref().and_then(|a| a.call.as_deref()), Some("account.signIn"));
-    assert_eq!(lsuite.message, "No setup. Sign in and your agent works.");
-}
-
-// ---- lsuite AI ----------------------------------------------------------------------------
-
-/// `/api/account/me` for a Pro account with 38 % of its allowance used.
-fn me_body(server: &str) -> Value {
-    json!({
-        "email": "ada@example.com", "name": "Ada", "plan": "pro", "planName": "Pro", "status": "active",
-        "usage": { "used": 1520.0, "limit": 4000, "percent": 38, "resetsAt": "2026-11-01T00:00:00.000Z" },
-        "models": ["claude-sonnet-5-5", "claude-haiku-4-5", "claude-opus-5-5"], "defaultModel": "claude-opus-5-5",
-        "manageUrl": format!("{server}/account"),
-    })
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn lsuite_ai_runs_on_the_account_with_no_setup() {
-    let _account = ACCOUNT.lock().await;
-    let dir = tempfile::tempdir().unwrap();
-    let s = with_doc(dir.path()).await;
-    let server = MockServer::start().await;
-    Mock::given(method("GET")).and(path("/api/account/me")).respond_with(ResponseTemplate::new(200).set_body_json(me_body(&server.uri()))).mount(&server).await;
-    Mock::given(method("POST"))
-        .and(path("/api/ai/v1/messages"))
-        .respond_with(Script {
-            bodies: vec![anthropic_tool("toolu_1", "doc_overview", "{}"), anthropic_tool("toolu_2", "layer_add", "{\"name\": \"Title\"}"), anthropic_text("Done.")],
-            content_type: "text/event-stream",
-            next: AtomicUsize::new(0),
-        })
-        .mount(&server)
-        .await;
-    sign_in(&server.uri(), "lsk_test_token_1234");
-
-    // The status shows the plan and the allowance, and Manage plan.
-    let status = status_of(&s, ProviderKind::Lsuite).await;
-    assert!(status.ready && status.active, "{status:?}");
-    let account = status.account.as_ref().unwrap();
-    assert_eq!(account.summary, "Pro · 38 % used · resets 1 Nov");
-    assert_eq!(status.default_model, "claude-opus-5-5");
-    assert_eq!(status.action.as_ref().and_then(|a| a.url.clone()), Some(format!("{}/account", server.uri())));
-
-    // The default provider, nothing to set: the run goes to <server>/api/ai with the token.
-    let mut run = Agent::start(&s, AgentConfig::from_settings(&s.settings().agent), "Add a title layer", Conversation::new());
-    let events = collect(&mut run).await;
-    assert!(matches!(events.last(), Some(AgentEvent::Done { changes: 1, summary, .. }) if summary == "Done."), "{events:#?}");
-    assert_eq!(layer_names(&s)[0], "Title");
-    let requests = server.received_requests().await.unwrap();
-    let messages: Vec<&Request> = requests.iter().filter(|r| r.url.path() == "/api/ai/v1/messages").collect();
-    assert_eq!(messages.len(), 3);
-    assert_eq!(messages[0].headers.get("x-api-key").unwrap(), "lsk_test_token_1234");
-    let first: Value = serde_json::from_slice(&messages[0].body).unwrap();
-    assert_eq!(first["model"], "claude-opus-5-5", "the plan's default model");
-    let second: Value = serde_json::from_slice(&messages[1].body).unwrap();
-    assert_eq!(second["messages"][2]["content"][0]["tool_use_id"], "toolu_1");
-    assert!(second["messages"][2]["content"][0]["content"].as_str().unwrap().contains("pages"), "doc_overview's answer went back");
-
-    // The plan's models are the model list.
-    let models = list_models(&s, ProviderKind::Lsuite, true).await;
-    assert_eq!(models.source, "builtin", "no /v1/models on this mock: the built-in list");
-    nori_control::account::remove();
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn lsuite_ai_says_when_the_allowance_is_used_up_and_never_switches() {
-    let _account = ACCOUNT.lock().await;
-    let dir = tempfile::tempdir().unwrap();
-    let s = with_doc(dir.path()).await;
-    s.set_secret("anthropic", Some("sk-ant-would-work")).unwrap();
-    let server = MockServer::start().await;
-    let manage = format!("{}/account", server.uri());
-    let message = format!("Your lsuite AI allowance for this month is used up (Pro, 4,000 credits). It resets on 1 Nov. Manage plan: {manage}");
-    Mock::given(method("GET")).and(path("/api/account/me")).respond_with(ResponseTemplate::new(200).set_body_json(me_body(&server.uri()))).mount(&server).await;
-    Mock::given(method("POST"))
-        .and(path("/api/ai/v1/messages"))
-        .respond_with(ResponseTemplate::new(402).set_body_json(json!({
-            "type": "error",
-            "error": { "type": "allowance_exhausted", "message": message, "manage_url": manage, "plan": "pro", "resets_at": "2026-11-01T00:00:00.000Z", "used": 4000, "limit": 4000 },
-        })))
-        .mount(&server)
-        .await;
-    sign_in(&server.uri(), "lsk_test_token_5678");
-    let mut run = Agent::start(&s, AgentConfig::new(ProviderKind::Lsuite), "Add a title", Conversation::new());
-    let events = collect(&mut run).await;
-    match events.last() {
-        Some(AgentEvent::Error { message: got, action, changes: 0, .. }) => {
-            assert_eq!(got, &message, "the server's one line, as it is");
-            assert!(!got.contains('\n'));
-            let action = action.as_ref().expect("Manage plan");
-            assert_eq!((action.label.as_str(), action.url.as_deref()), ("Manage plan", Some(manage.as_str())));
-        }
-        e => panic!("expected the allowance error, got {e:?}"),
-    }
-    let posts = server.received_requests().await.unwrap().into_iter().filter(|r| r.method.as_str() == "POST").count();
-    assert_eq!(posts, 1, "a refusal isn't retried");
-
-    // Signed out: the run says to sign in, with the button for it; no other provider is tried.
-    nori_control::account::remove();
-    let mut run = Agent::start(&s, AgentConfig::new(ProviderKind::Lsuite), "Add a title", Conversation::new());
-    match collect(&mut run).await.last() {
-        Some(AgentEvent::Error { message, action, .. }) => {
-            assert!(message.starts_with("Sign in to lsuite AI"), "{message}");
-            assert_eq!(action.as_ref().and_then(|a| a.call.as_deref()), Some("account.signIn"));
-        }
-        e => panic!("expected the sign-in error, got {e:?}"),
-    }
 }
 
 // ---- the host -------------------------------------------------------------------------------
@@ -816,7 +688,7 @@ async fn one_run_at_a_time_and_permissions_hold() {
     let providers = call(&s, Source::Cli, "agent.providers", json!({})).await;
     let ids: Vec<&str> = providers["providers"].as_array().unwrap().iter().map(|p| p["provider"].as_str().unwrap()).collect();
     assert_eq!(ids, nori_control::settings::AGENT_PROVIDERS);
-    assert_eq!(providers["groups"][0], json!({ "id": "lsuite", "label": "lsuite AI" }));
+    assert_eq!(providers["groups"][0], json!({ "id": "cli", "label": "On this computer" }));
     let e = nori_control::call(&s, Source::Cli, "agent.models", json!({ "provider": "codexx" })).await.unwrap_err();
     assert!(e.contains("Did you mean codex?"), "{e}");
 }

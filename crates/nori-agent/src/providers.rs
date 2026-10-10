@@ -13,8 +13,6 @@ use crate::ProviderKind;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Group {
-    /// lsuite AI: the subscription, signed in with the lsuite account.
-    Lsuite,
     /// A coding CLI installed on this computer, with `nori-mcp --live` attached.
     Cli,
     /// A model API, with a key.
@@ -24,11 +22,10 @@ pub enum Group {
 }
 
 impl Group {
-    pub const ALL: [Group; 4] = [Group::Lsuite, Group::Cli, Group::Api, Group::Local];
+    pub const ALL: [Group; 3] = [Group::Cli, Group::Api, Group::Local];
 
     pub fn label(self) -> &'static str {
         match self {
-            Group::Lsuite => "lsuite AI",
             Group::Cli => "On this computer",
             Group::Api => "Model APIs",
             Group::Local => "Local servers",
@@ -37,7 +34,6 @@ impl Group {
 
     pub fn id(self) -> &'static str {
         match self {
-            Group::Lsuite => "lsuite",
             Group::Cli => "cli",
             Group::Api => "api",
             Group::Local => "local",
@@ -49,7 +45,7 @@ impl Group {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Wire {
     Cli,
-    /// Anthropic's Messages API (also lsuite AI's).
+    /// Anthropic's Messages API.
     Anthropic,
     /// Chat Completions, with the provider's quirks.
     Chat(Quirks),
@@ -98,8 +94,7 @@ pub struct Info {
     pub wire: Wire,
     /// Model used when none is chosen (empty: the CLI's or server's own).
     pub default_model: &'static str,
-    /// Empty for the CLIs, custom servers (the person gives it) and lsuite AI (the account's
-    /// server, `<server>/api/ai`).
+    /// Empty for the CLIs and custom servers (the person gives it).
     pub default_base_url: &'static str,
     /// The address is the person's to give (a custom server).
     pub needs_base_url: bool,
@@ -116,22 +111,6 @@ const fn key(id: &'static str, env: &'static [&'static str], url: &'static str, 
 }
 
 pub const ALL: &[Info] = &[
-    // ---- lsuite AI ----
-    Info {
-        kind: ProviderKind::Lsuite,
-        id: "lsuite",
-        label: "lsuite AI",
-        group: Group::Lsuite,
-        tagline: "No setup. Sign in and your agent works.",
-        wire: Wire::Anthropic,
-        default_model: "claude-sonnet-5-5",
-        default_base_url: "",
-        needs_base_url: false,
-        base_url_hint: "",
-        key: None,
-        models: &["claude-sonnet-5-5", "claude-haiku-4-5", "claude-opus-5-5"],
-        website: "https://lsuite.xyz/ai",
-    },
     // ---- on this computer ----
     Info {
         kind: ProviderKind::ClaudeCode,

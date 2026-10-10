@@ -20,10 +20,10 @@ crates/nori-io       open/export: pictures (image crate), PSD layers (psd crate)
                      SVG in (usvg) and out, PDF out (krilla), .gbr brushes and .ase swatches,
                      the editors people come from (APPS) and formats (FORMATS)
 crates/nori-control  registry (commands/mod.rs lists every spec), session, permissions, bridge,
-                     discovery, lsuite account (account.rs), plugin host (plugins.rs), settings,
+                     discovery, plugin host (plugins.rs), settings,
                      the agent harness (harness/: brief.md, skills/*.md, context.rs, checks.rs),
                      updates through lsuite (update.rs)
-crates/nori-agent    the built-in agent (lsuite AI, Claude Code, Codex, Anthropic, OpenAI, Ollama,
+crates/nori-agent    the built-in agent (Claude Code, Codex, Anthropic, OpenAI, Ollama,
                      OpenAI-compatible), ported from kimchi-agent
 crates/nori-desktop  the window (package/binary `nori`): store.rs, app.rs, views/, ui/, theme.rs
 crates/nori-cli      `nori-cli` (and `nori-cli agent`: the built-in agent on a file);  crates/nori-mcp: `nori-mcp`
@@ -93,33 +93,35 @@ strings in the window. `grep -rn nori` finds them all.
   `~/.lsuite/plugins-src/nori/.sdk/` (works offline and before the repository has a tag; the git
   line is in a comment). A library is copied before loading, so rebuilds reload without a restart;
   old copies stay mapped.
-- lsuite AI is the default agent provider (AI.md); signing in is the person's own action
-  (`account.signIn` is person-only).
 - Auto-update (0.2, lsuite's DISTRIBUTION.md): `app.checkUpdates` reads
-  `<server>/api/apps/nori/latest.json` with the lsuite account's token; signed out, the status's
-  `signIn` says "Sign in to lsuite (in the lsuite app) to get updates". `NORI_UPDATE_URL` keeps
-  working without an account (tests). Signatures unchanged.
+  `<server>/api/apps/nori/latest.json` (`LSUITE_SERVER`, else lsuite.xyz). `NORI_UPDATE_URL`
+  keeps working (tests). Signatures unchanged.
 
 ## lsuite
 
 nori is part of **lsuite** with ryolune (music), kimchi (video) and folio (documents); its page is
-lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `AI.md`, `design/DESIGN.md`.
+lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `design/DESIGN.md`.
 
 - [x] Command registry: `family.verb` (doc, page, layer, raster, brushes, vector, text, select,
-      filter, color, history, export, handoff, account, plugin, app, agent, ui), one undo history,
+      filter, color, history, export, handoff, plugin, app, agent, ui), one undo history,
       `doc.batch`, `doc.overview`.
 - [x] CLI `nori-cli` (running app, `--file`, `--headless`, `convert`), MCP `nori-mcp --live | --file`,
       docs/AI_CONTROL.md, generated docs/COMMANDS.md.
-- [x] Built-in agent with lsuite AI first; permissions in `settings.agent.permissions`.
+- [x] Built-in agent on the person's own model (Claude Code by default); permissions in
+      `settings.agent.permissions`.
 - [x] Discovery: `~/.lsuite/apps/nori.json` (kind `image`); hand-off `handoff.toKimchi`.
 - [x] Plugins per PLUGINS.md (stock, installed, formats, build with your agent, `plugin.*`).
 - [x] Design system v2, one-ink mark and icon.
-- [x] Signed auto-update through lsuite (0.2): `<server>/api/apps/nori/latest.json` with the
-      account's token, the file route with the token (never to another host), "Sign in to lsuite"
-      when signed out; tests against a fake server in `update.rs`.
+- [x] Signed auto-update through lsuite (0.2): `<server>/api/apps/nori/latest.json` and the
+      file route, both public (no account, no `Authorization` header); tests against a fake server
+      in `update.rs`.
 - [x] Builds: kimchi's `suite-build.yml` (app=nori) builds and signs; `scripts/publish-build.sh
       <version> <run-id>` checks the signatures, writes `latest.json` and `SHA256SUMS` and creates
       `nori-v<version>` in `ludovic111/lsuite-builds` (`--dry-run` first).
+- **Fully free** (owner's decision, 2026-10-10): no lsuite account, lsuite AI, Pass, Cloud or
+      Marketplace. The agent runs on the person's own model only; updates need no account
+      (`LSUITE_SERVER` replaces `LSUITE_ACCOUNT_SERVER`); an old `~/.lsuite/account.json` is
+      ignored, never deleted. Settings saved with the `lsuite` provider load with Claude Code.
 - **Linux only during the beta** (owner's decision, 2026-10-08): macOS and Windows are "coming
       soon". Their code stays in the source (GPUI backends, `bundle-macos.sh`,
       `bundle-windows.sh`, the updater's platform keys), but CI, the release workflow and

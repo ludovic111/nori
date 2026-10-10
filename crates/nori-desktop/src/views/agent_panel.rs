@@ -1,6 +1,6 @@
 //! The Agent panel (⌘J): the conversation with the built-in agent, one card per command it (or
 //! an MCP client, or the CLI) ran, how each run ended, and "Revert this run". The agent runs
-//! lsuite AI or the person's own model (`nori-agent`); this panel only draws it and sends.
+//! the person's own model (`nori-agent`); this panel only draws it and sends.
 
 use gpui::{AnyElement, Context, Entity, FontWeight, MouseButton, Render, ScrollHandle, Subscription, Window, div, prelude::*, px};
 use nori_agent::{Entry, RunState, Snapshot};
@@ -76,7 +76,6 @@ impl AgentPanel {
         let s = self.store.read(cx);
         let p = s.settings.agent.provider.clone();
         let name = match p.as_str() {
-            "lsuite" => "lsuite AI",
             "claude-code" => "Claude Code",
             "codex" => "Codex",
             "anthropic" => "Anthropic API",
@@ -84,21 +83,7 @@ impl AgentPanel {
             "ollama" => "Ollama",
             _ => "OpenAI-compatible",
         };
-        let detail = if p == "lsuite" {
-            let acc = &s.account;
-            if acc["signedIn"] != json!(true) {
-                "Not signed in".to_string()
-            } else {
-                let plan = acc["plan"].as_str().or(acc["account"]["plan"].as_str()).unwrap_or("").to_string();
-                match (acc["usage"]["used"].as_f64(), acc["usage"]["limit"].as_f64()) {
-                    (Some(u), Some(l)) if l > 0.0 => format!("{} · {:.0} % used", if plan.is_empty() { "No plan".into() } else { plan }, u / l * 100.0),
-                    _ => plan,
-                }
-            }
-        } else {
-            s.settings.agent.model.clone()
-        };
-        let signed_out = p == "lsuite" && s.account["signedIn"] != json!(true);
+        let detail = s.settings.agent.model.clone();
         let pid = p.clone();
         div()
             .flex()
@@ -110,7 +95,6 @@ impl AgentPanel {
             .border_color(t.line)
             .child(logo(&pid, px(18.)))
             .child(div().flex_1().min_w_0().flex().flex_col().child(div().text_size(px(sz::SM)).font_weight(FontWeight::MEDIUM).child(name)).when(!detail.is_empty(), |d| d.child(div().font_family(MONO).text_size(px(10.)).text_color(t.text_2).truncate().child(detail))))
-            .when(signed_out, |d| d.child(Button::new("agent-sign-in", "Sign in").small().primary().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("account.signIn", json!({}), cx)))))
             .child(Button::new("agent-provider", "Change").small().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.open_dialog(Dialog::Settings { section: Some("agent".into()) }, cx))))
             .into_any_element()
     }
@@ -153,7 +137,6 @@ impl AgentPanel {
                     .into_any_element()
             }
             Entry::Outcome { state, error, changes, run, .. } => {
-                let allowance = error.as_deref().is_some_and(|e| e.to_lowercase().contains("allowance") || e.to_lowercase().contains("plan"));
                 let run = *run;
                 let reverted = self.snapshot.run(run).is_some_and(|r| !r.can_revert());
                 div()
@@ -168,10 +151,6 @@ impl AgentPanel {
                         RunState::Error => error.clone().unwrap_or_else(|| "It went wrong.".into()),
                         RunState::Running => "Working…".into(),
                     }))
-                    .when(allowance, |d| {
-                        let url = format!("{}/account", nori_control::account::server());
-                        d.child(Button::new(("manage", i), "Manage plan").small().on_click(move |_, _, cx| cx.open_url(&url)))
-                    })
                     .when(*changes > 0 && !reverted, |d| d.child(Button::new(("revert", i), "Revert this run").small().on_click(move |_, _, cx| cx.store().update(cx, |s, cx| s.run("agent.revert", json!({ "run": run }), cx)))))
                     .into_any_element()
             }
