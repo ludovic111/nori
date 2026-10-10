@@ -33,7 +33,7 @@ nearly, gets a `-dark` copy in white (or with its colours inverted) for the dark
 | `rust-dark.png` | the same (dark theme) | the same in white |
 | `kimchi.png` | kimchi (hand-offs) | kimchi's app icon, `brand/icon.svg` in the kimchi repository (github.com/ludovic111/kimchi), rasterised |
 | `ryolune.png` | ryolune (hand-offs) | ryolune's app icon, `desktop/icons/icon.png` in github.com/ludovic111/ryolune (from kimchi's logos) |
-| `lsuite.png` | lsuite AI | the lsuite mark, `assets/img/lsuite.svg` in the lsuite site repository (github.com/ludovic111/lsuite), rasterised with ImageMagick (from kimchi's logos) |
+| `lsuite.png` | lsuite (stock plugins) | the lsuite mark, `assets/img/lsuite.svg` in the lsuite site repository (github.com/ludovic111/lsuite), rasterised with ImageMagick (from kimchi's logos) |
 | `claude.png` | Claude Code, Anthropic API, Claude Desktop | https://claude.ai/favicon.svg (from kimchi's logos) |
 | `openai.png` | OpenAI, Codex, ChatGPT (light theme) | https://cdn.oaistatic.com/assets/favicon-o20kmmos.svg (ChatGPT favicon; its tile background left out; from kimchi's logos) |
 | `openai-dark.png` | the same (dark theme) | the same file, in the white fill its own dark-mode style gives the mark |

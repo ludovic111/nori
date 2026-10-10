@@ -99,11 +99,7 @@ pub async fn list(session: &Arc<Session>, kind: ProviderKind, refresh: bool) -> 
     if config.provider != kind {
         config = AgentConfig::new(kind);
     }
-    // lsuite AI's key is the account's token (read each time: it can change under us).
-    let key = match kind {
-        ProviderKind::Lsuite => nori_control::account::read().map(|a| a.token),
-        _ => config.api_key(session),
-    };
+    let key = config.api_key(session);
     let base = config.base_url();
     let cache_key = format!("{kind}|{base}|{}|{}", config.base_url, fingerprint(key.as_deref()));
     if !refresh && let Some((at, list)) = cache().lock().get(&cache_key).cloned() && at.elapsed() < TTL {
@@ -113,7 +109,6 @@ pub async fn list(session: &Arc<Session>, kind: ProviderKind, refresh: bool) -> 
     let http = crate::http::client();
     let fetched: Result<Vec<ModelInfo>, String> = match kind {
         ProviderKind::ClaudeCode | ProviderKind::Codex => Err(String::new()),
-        ProviderKind::Lsuite if key.is_none() => Err("Sign in to lsuite AI to see the models of your plan.".into()),
         ProviderKind::Ollama => ollama(&http, &base).await,
         _ if kind.info().key.is_some_and(|k| k.required) && key.is_none() => Err("Add a key to see this provider's models.".into()),
         _ => fetch(&http, kind, &base, key.as_deref()).await,
@@ -154,8 +149,7 @@ async fn json(r: reqwest::RequestBuilder, what: &str) -> Result<Value, String> {
     serde_json::from_str(&text).map_err(|e| format!("{what} answered oddly: {e}"))
 }
 
-/// The provider's own model list (every wire but the CLIs and Ollama). lsuite AI lists the
-/// plan's models, in Anthropic's format.
+/// The provider's own model list (every wire but the CLIs and Ollama).
 pub(crate) async fn fetch(http: &reqwest::Client, kind: ProviderKind, base: &str, key: Option<&str>) -> Result<Vec<ModelInfo>, String> {
     let label = kind.label();
     let bearer = |r: reqwest::RequestBuilder| match key {

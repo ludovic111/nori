@@ -1,15 +1,13 @@
 //! nori-agent: the engine behind the Agent panel.
 //!
-//! The panel runs lsuite AI (the subscription: sign in once, no setup) or the model the person
-//! already has: their Claude Code or Codex, an Anthropic or OpenAI key, or a model on a local
-//! server (Ollama, any OpenAI-compatible one). [`providers`] describes each. Whatever the
-//! provider, the agent acts only through nori's command registry (`nori_control::call`), so
-//! permissions (`settings.agent.permissions`), validation and the one undo history behave
-//! exactly as for MCP and the CLI.
+//! The panel runs the model the person already has: their Claude Code or Codex, an Anthropic or
+//! OpenAI key, or a model on a local server (Ollama, any OpenAI-compatible one). [`providers`]
+//! describes each. Whatever the provider, the agent acts only through nori's command registry
+//! (`nori_control::call`), so permissions (`settings.agent.permissions`), validation and the one
+//! undo history behave exactly as for MCP and the CLI.
 //!
-//! * lsuite AI, the API providers and the local servers get every registry command as a tool
-//!   (`family_verb`) and are run here, as [`Source::Agent`]. lsuite AI speaks Anthropic's
-//!   Messages API at `<server>/api/ai` with the account's token.
+//! * The API providers and the local servers get every registry command as a tool
+//!   (`family_verb`) and are run here, as [`Source::Agent`].
 //! * Claude Code and Codex run as child processes with `nori-mcp --live` attached; their
 //!   commands reach the app through the bridge as [`Source::Mcp`] and are picked up from the
 //!   session's event stream.
@@ -50,7 +48,7 @@ pub use context::{Glance, glance};
 pub use host::{ConversationInfo, Entry, Host, RunInfo, RunState, Snapshot};
 pub use models::{ModelInfo, ModelList, list as list_models};
 pub use providers::Group;
-pub use status::{AccountStatus, Action, KeyStatus, Next, ProviderStatus, provider_status, status_of};
+pub use status::{Action, KeyStatus, Next, ProviderStatus, provider_status, status_of};
 pub use tools::{RUN_TOOL, TOOL_OUTPUT_LIMIT, ToolDef, ToolSet, system_prompt, tool_defs};
 
 /// Most model round trips in one run before it stops and says so.
@@ -66,13 +64,12 @@ pub const MAX_HISTORY: usize = 80;
 /// about each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ProviderKind {
-    #[serde(rename = "lsuite")]
-    Lsuite,
     #[serde(rename = "claude-code")]
     ClaudeCode,
     #[serde(rename = "codex")]
     Codex,
-    #[serde(rename = "anthropic")]
+    /// `lsuite` too: conversations saved with lsuite AI (gone; it spoke Anthropic's API) still load.
+    #[serde(rename = "anthropic", alias = "lsuite")]
     Anthropic,
     #[serde(rename = "openai")]
     OpenAi,
@@ -83,10 +80,9 @@ pub enum ProviderKind {
 }
 
 impl ProviderKind {
-    /// Every provider, in `nori_control::settings::AGENT_PROVIDERS` order: lsuite AI first, the
-    /// CLIs, the model APIs, the local servers.
-    pub const ALL: [ProviderKind; 7] = [
-        ProviderKind::Lsuite,
+    /// Every provider, in `nori_control::settings::AGENT_PROVIDERS` order: the CLIs, the model
+    /// APIs, the local servers.
+    pub const ALL: [ProviderKind; 6] = [
         ProviderKind::ClaudeCode,
         ProviderKind::Codex,
         ProviderKind::Anthropic,
@@ -112,14 +108,13 @@ impl ProviderKind {
         self.info().group
     }
 
-    /// An id, or a name people use for it (`claude`, `lsuite ai`, `local`, `vllm`…).
+    /// An id, or a name people use for it (`claude`, `local`, `vllm`…).
     pub fn parse(id: &str) -> Option<Self> {
         let id = id.trim().to_ascii_lowercase().replace([' ', '_'], "-");
         if let Some(i) = providers::ALL.iter().find(|i| i.id == id) {
             return Some(i.kind);
         }
         Some(match id.as_str() {
-            "lsuite-ai" | "lsuiteai" | "lsuite.xyz" | "subscription" => ProviderKind::Lsuite,
             "claude" | "claudecode" => ProviderKind::ClaudeCode,
             "codex-cli" | "chatgpt" => ProviderKind::Codex,
             "claude-api" | "anthropic-api" => ProviderKind::Anthropic,
@@ -131,8 +126,7 @@ impl ProviderKind {
     }
 
     /// Model used when `settings.agent.model` is empty. Empty for the CLIs (their own default)
-    /// and the local servers (the first model they have). lsuite AI uses the plan's default
-    /// when it can ask, else this.
+    /// and the local servers (the first model they have).
     pub fn default_model(self) -> &'static str {
         self.info().default_model
     }
@@ -164,8 +158,7 @@ pub struct AgentConfig {
     pub provider: ProviderKind,
     /// Empty: the provider's default.
     pub model: String,
-    /// Empty: the provider's default (lets an OpenAI-compatible server, a proxy or a local
-    /// lsuite server stand in).
+    /// Empty: the provider's default (lets an OpenAI-compatible server or a proxy stand in).
     pub base_url: String,
     /// Model round trips before the run stops (in-process providers).
     pub max_steps: usize,
@@ -176,10 +169,10 @@ impl AgentConfig {
         Self { provider, model: String::new(), base_url: String::new(), max_steps: MAX_STEPS }
     }
 
-    /// An unknown provider id falls back to lsuite AI, the settings default.
+    /// An unknown provider id falls back to Claude Code, the settings default.
     pub fn from_settings(s: &AgentSettings) -> Self {
         Self {
-            provider: ProviderKind::parse(&s.provider).unwrap_or(ProviderKind::Lsuite),
+            provider: ProviderKind::parse(&s.provider).unwrap_or(ProviderKind::ClaudeCode),
             model: s.model.trim().to_string(),
             base_url: s.base_url.trim().to_string(),
             max_steps: MAX_STEPS,
@@ -191,13 +184,9 @@ impl AgentConfig {
         if self.model.trim().is_empty() { self.provider.default_model().to_string() } else { self.model.trim().to_string() }
     }
 
-    /// The configured base URL without a trailing slash, else the provider's default (for
-    /// lsuite AI, `<account server>/api/ai`).
+    /// The configured base URL without a trailing slash, else the provider's default.
     pub fn base_url(&self) -> String {
         let b = self.base_url.trim();
-        if b.is_empty() && self.provider == ProviderKind::Lsuite {
-            return format!("{}/api/ai", nori_control::account::server());
-        }
         let b = if b.is_empty() { self.provider.default_base_url() } else { b };
         b.trim_end_matches('/').to_string()
     }
@@ -242,8 +231,7 @@ pub enum Part {
     /// `name` is the tool name (`layer_add`).
     ToolUse { id: String, name: String, input: Value },
     ToolResult { id: String, name: String, output: String, is_error: bool },
-    /// A provider block replayed verbatim to the same wire only (Anthropic thinking blocks,
-    /// also through lsuite AI).
+    /// A provider block replayed verbatim to the same wire only (Anthropic thinking blocks).
     Opaque { provider: ProviderKind, block: Value },
     /// A picture a command showed the model (`call`: the tool call whose result it belongs to),
     /// base64-encoded. Kept after the results it belongs to, in the same message.
@@ -365,9 +353,8 @@ pub enum AgentEvent {
     /// The run finished. `summary` is the final reply; `checkpoint` (set when the run changed
     /// something) is what "Revert this run" passes to [`revert`].
     Done { summary: String, checkpoint: Option<u64>, changes: usize, conversation: Conversation },
-    /// The run failed; finished edits stay (and `checkpoint` can revert them). `action` is the
-    /// one thing to do about it, when there is one (Manage plan, Sign in to lsuite AI).
-    Error { message: String, checkpoint: Option<u64>, changes: usize, action: Option<Action> },
+    /// The run failed; finished edits stay (and `checkpoint` can revert them).
+    Error { message: String, checkpoint: Option<u64>, changes: usize },
     /// Stopped by [`AgentRun::cancel`]; finished edits stay.
     Cancelled { checkpoint: Option<u64>, changes: usize },
 }
@@ -386,8 +373,6 @@ struct Shared {
     changes: AtomicUsize,
     conversation: Mutex<Conversation>,
     finished: AtomicBool,
-    /// What the person can do about the error the run ends with.
-    action: Mutex<Option<Action>>,
     steering: Mutex<std::collections::VecDeque<String>>,
     steered: tokio::sync::Notify,
 }
@@ -576,11 +561,6 @@ impl Run {
         }
     }
 
-    /// What the person can do about the error this run is about to end with.
-    pub fn set_action(&self, action: Option<Action>) {
-        *self.shared.action.lock() = action;
-    }
-
     pub fn set_conversation(&self, c: &Conversation) {
         *self.shared.conversation.lock() = c.clone();
     }
@@ -669,7 +649,7 @@ impl Run {
         let event = match outcome {
             None => AgentEvent::Cancelled { checkpoint, changes },
             Some(Ok(summary)) => AgentEvent::Done { summary, checkpoint, changes, conversation: self.shared.conversation.lock().clone() },
-            Some(Err(message)) => AgentEvent::Error { message, checkpoint, changes, action: self.shared.action.lock().take() },
+            Some(Err(message)) => AgentEvent::Error { message, checkpoint, changes },
         };
         self.shared.finished.store(true, Ordering::Release);
         self.emit(event);

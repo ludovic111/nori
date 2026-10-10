@@ -1013,32 +1013,6 @@ Send the picture to kimchi (lsuite's video editor): exported as PNG and imported
 | `duration` | number |  | Seconds on the timeline (default kimchi's for pictures). |
 | `scale` | number |  | Size multiplier. |
 
-## account
-
-### `account.status`
-
-The lsuite account on this computer (shared by every lsuite app): signed in or not, email, plan, the AI allowance used and when it resets. _(read only)_
-
-| Parameter | Type | | Description |
-| --- | --- | --- | --- |
-| `refresh` | boolean |  | Ask the server again now. |
-
-### `account.signIn`
-
-Sign in to lsuite AI: opens the browser to sign in and connect nori (the account is shared with every lsuite app), or takes a key (lsk_…) shown on the account page. _(changes things · person only)_
-
-| Parameter | Type | | Description |
-| --- | --- | --- | --- |
-| `key` | string |  | An lsk_… key instead of the browser. |
-
-### `account.signOut`
-
-Sign out of lsuite AI (every lsuite app on this computer). _(changes things · person only)_
-
-### `account.plans`
-
-lsuite AI plans, prices (a demo: nothing is charged), models and monthly allowances, from the server. _(read only)_
-
 ## plugin
 
 ### `plugin.list`
@@ -1207,7 +1181,7 @@ Change a setting by its dotted key (appearance.mode, tools.brush.size…). The a
 
 ### `app.checkUpdates`
 
-Look for a newer nori, through lsuite (the free lsuite account gets updates; signed out, the status says to sign in in the lsuite app). _(read only)_
+Look for a newer nori, through lsuite (no account needed). _(read only)_
 
 ### `app.updateStatus`
 
@@ -1258,7 +1232,7 @@ Quit nori. _(changes things · permission: app control · needs the window)_
 
 ### `agent.providers`
 
-What can run the built-in agent: lsuite AI (no setup: sign in), Claude Code and Codex on this computer, the Anthropic and OpenAI APIs, Ollama and OpenAI-compatible servers; whether each is ready and what to do next. _(read only · needs the window)_
+What can run the built-in agent: Claude Code and Codex on this computer, the Anthropic and OpenAI APIs, Ollama and OpenAI-compatible servers; whether each is ready and what to do next. _(read only · needs the window)_
 
 ### `agent.setProvider`
 
@@ -1266,7 +1240,7 @@ Choose what runs the built-in agent. _(changes things · person only)_
 
 | Parameter | Type | | Description |
 | --- | --- | --- | --- |
-| `provider` | string | required | lsuite, claude-code, codex, anthropic, openai, ollama or openai-compatible. |
+| `provider` | string | required | claude-code, codex, anthropic, openai, ollama or openai-compatible. |
 | `model` | string |  | Model id (empty: the provider's default). |
 | `baseUrl` | string |  | Server address for Ollama or OpenAI-compatible. |
 
@@ -1407,7 +1381,7 @@ Open or close a panel or dialog: agent, plugins, settings, export, shortcuts, wh
 | --- | --- | --- | --- |
 | `panel` | string | required | Panel name. |
 | `open` | boolean |  | false closes it. |
-| `section` | string |  | For settings: agent, appearance, plugins, account, about. |
+| `section` | string |  | For settings: agent, appearance, updates, about. |
 
 ### `ui.action`
 

@@ -14,7 +14,7 @@ use gpui::{App, Context, Entity, EventEmitter, Global, Pixels, Point, SharedStri
 use nori_control::session::Colors;
 use nori_control::{CmdResult, CommandRecord, Event, Session, Settings, Source, ToastKind, UiState};
 use nori_core::{Document, StepInfo};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 /// The tools, as the tool column groups them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -338,7 +338,6 @@ pub struct Store {
     pub toasts: Vec<Toast>,
     pub agent_open: bool,
     pub right: RightTab,
-    pub account: Value,
     pub plugins: Value,
     pub commands: Vec<CommandRecord>,
     pub dropping: bool,
@@ -408,7 +407,6 @@ impl Store {
             toasts: vec![],
             agent_open: false,
             right: RightTab::Layers,
-            account: json!({ "signedIn": nori_control::account::read().is_some() }),
             plugins: Value::Null,
             commands: vec![],
             dropping: false,
@@ -418,7 +416,6 @@ impl Store {
         };
         s.refresh_doc();
         s.refresh_plugins();
-        s.refresh_account(cx);
         s
     }
 
@@ -482,7 +479,6 @@ impl Store {
                 cx.defer(crate::app::apply_theme_setting);
             }
             Event::ToolsChanged => self.colors = *self.session.colors.read(),
-            Event::AccountChanged => self.refresh_account(cx),
             Event::PluginsChanged => self.refresh_plugins(),
             Event::Progress { id, label, done, error } => {
                 self.progress.retain(|(i, _)| *i != id);
@@ -537,28 +533,6 @@ impl Store {
 
     pub fn refresh_plugins(&mut self) {
         self.plugins = nori_control::commands::plugin::list(&self.session);
-    }
-
-    /// The account file now, then the server (plan, allowance) in the background.
-    pub fn refresh_account(&mut self, cx: &mut Context<Self>) {
-        let signed = nori_control::account::read();
-        self.account = match &signed {
-            Some(a) => json!({ "signedIn": true, "account": a.public(), "plan": a.plan }),
-            None => json!({ "signedIn": false }),
-        };
-        if signed.is_some() {
-            let task = gpui_tokio::Tokio::spawn(cx, nori_control::commands::account::status(true));
-            cx.spawn(async move |this, cx| {
-                if let Ok(v) = task.await {
-                    this.update(cx, |s, cx| {
-                        s.account = v;
-                        cx.notify();
-                    })
-                    .ok();
-                }
-            })
-            .detach();
-        }
     }
 
     /// Tells the session what the window shows (`ui.state`).

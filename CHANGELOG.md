@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+lsuite is fully free: no account, no paid plan.
+
+- **No lsuite account.** Updates come from lsuite.xyz without signing in
+  (`<server>/api/apps/nori/latest.json`, no `Authorization` header; `LSUITE_SERVER` replaces
+  `LSUITE_ACCOUNT_SERVER`). Settings › Updates no longer asks to sign in. An old
+  `~/.lsuite/account.json` is ignored and left alone.
+- **lsuite AI is gone.** The agent runs on what you already have: Claude Code, Codex, an
+  Anthropic or OpenAI key, Ollama or an OpenAI-compatible server. Claude Code is the default;
+  settings that chose lsuite AI switch to it, and conversations saved with it still open.
+- **Removed:** the `account.*` commands (`account.status`, `account.signIn`, `account.signOut`,
+  `account.plans`), Settings › lsuite AI, the sign-in buttons in the Agent panel and the
+  first-run setup, the plan and allowance lines, and `nori-cli doctor`'s account check.
+
 ## 0.2.0 — 2026-10-07
 
 The agent harness: an agent working in nori now knows the trade, sees and measures what it

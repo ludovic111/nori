@@ -10,7 +10,7 @@ is [COMMANDS.md](COMMANDS.md).
 
 | | How | Notes |
 | --- | --- | --- |
-| The Agent panel | ⌘J in the window | lsuite AI (sign in, no setup), Claude Code, Codex, the Anthropic or OpenAI API, Ollama or any OpenAI-compatible server. One card per command; "Revert this run". |
+| The Agent panel | ⌘J in the window | Claude Code (the default), Codex, the Anthropic or OpenAI API, Ollama or any OpenAI-compatible server. One card per command; "Revert this run". |
 | `nori-mcp` | `claude mcp add nori -- /Applications/nori.app/Contents/MacOS/nori-mcp --live` | `--live` drives the open window; `--file poster.nori` works on a file without it; every command is a tool (`layer.add` → `layer_add`). `nori-cli mcp-config` prints the line for Claude Code, Codex, Cursor and Claude Desktop. |
 | `nori-cli` | `nori-cli layer.add name=Sky` | On the running app, or `--file <file>` (a `.nori` saves back to itself; a photo or PSD saves to the `.nori` beside it, never over the original), or `--headless` in memory. `nori-cli convert in.psd out.pdf` converts files. `nori-cli --file poster.nori agent "…" --provider claude-code` runs the built-in agent on a file without the app (`--model`, `--max-steps`, `--json`). |
 | The bridge | `127.0.0.1`, token in `control.json` (0600) in nori's data folder | Newline-delimited JSON-RPC 2.0: `auth {token, client}` first, then any command. The same protocol as kimchi's and ryolune's. |
@@ -65,7 +65,7 @@ a harness change that lowers the pass rate doesn't ship.
 Settings › Agent › Permissions apply to the built-in agent and every MCP client (and to
 `nori-cli --agent`): editing the open document is always allowed; opening, saving and
 exporting files, changing settings, building plugins and quitting each have a switch.
-Signing in, API keys and the permissions themselves stay with the person.
+Choosing the agent's provider, API keys and the permissions themselves stay with the person.
 
 ## Recipes
 
@@ -103,9 +103,8 @@ project, on its timeline.
 
 ## Updates
 
-`app.checkUpdates` reads `<server>/api/apps/nori/latest.json` with the lsuite account's token
-(`~/.lsuite/account.json`; `<server>` is `LSUITE_ACCOUNT_SERVER`, the account's server, else
-lsuite.xyz). Signed out it answers with `signIn`: "Sign in to lsuite (in the lsuite app) to get
-updates". `NORI_UPDATE_URL` points it at another `latest.json` without an account (tests).
+`app.checkUpdates` reads `<server>/api/apps/nori/latest.json` with no account and no
+`Authorization` header (`<server>` is `LSUITE_SERVER`, else lsuite.xyz); the files it lists are
+on the server's public file route. `NORI_UPDATE_URL` points it at another `latest.json` (tests).
 Builds are published with `scripts/publish-build.sh <version> <run-id>` (from a run of kimchi's
 suite build) to the private `ludovic111/lsuite-builds`.

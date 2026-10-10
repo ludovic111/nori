@@ -1,5 +1,5 @@
 //! Dialogs (tier-3 glass over the scrim, inside corner brackets): new document, export,
-//! settings (appearance, agent, lsuite AI, about), plugins, a filter's parameters, shortcuts,
+//! settings (appearance, agent, updates, about), plugins, a filter's parameters, shortcuts,
 //! what's new.
 
 use std::collections::HashMap;
@@ -279,7 +279,7 @@ impl Dialogs {
 
     fn settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let t = cx.theme().clone();
-        let sections = [("appearance", "Appearance", "sun-moon"), ("agent", "Agent", "bot"), ("account", "lsuite AI", "sparkles"), ("updates", "Updates", "refresh-cw"), ("about", "About", "info")];
+        let sections = [("appearance", "Appearance", "sun-moon"), ("agent", "Agent", "bot"), ("updates", "Updates", "refresh-cw"), ("about", "About", "info")];
         let current = self.section.clone();
         let nav = div().w(px(180.)).flex_none().flex().flex_col().gap(px(2.)).p(px(10.)).border_r_1().border_color(t.line).children(sections.iter().map(|(id, label, ic)| {
             let sel = current == *id;
@@ -303,7 +303,6 @@ impl Dialogs {
         }));
         let content = match current.as_str() {
             "agent" => self.agent_settings(cx),
-            "account" => account_section(cx),
             "updates" => update_controls(cx),
             "about" => about_section(cx),
             _ => appearance_section(cx),
@@ -320,9 +319,7 @@ impl Dialogs {
         let t = cx.theme().clone();
         let s = self.store.read(cx);
         let settings = s.settings.clone();
-        let signed = s.account["signedIn"] == json!(true);
-        let providers: [(&str, &str, &str); 7] = [
-            ("lsuite", "lsuite AI", "No setup. Sign in and your agent works."),
+        let providers: [(&str, &str, &str); 6] = [
             ("claude-code", "Claude Code", "Your Claude Code on this computer."),
             ("codex", "Codex", "Your Codex CLI on this computer."),
             ("anthropic", "Anthropic API", "Claude with your own API key."),
@@ -337,8 +334,6 @@ impl Dialogs {
             let needs_key = matches!(*id, "anthropic" | "openai" | "openai-compatible");
             let has_key = needs_key && s.session.secret(id).is_some();
             let status = match *id {
-                "lsuite" if signed => "Signed in",
-                "lsuite" => "Sign in to use it",
                 _ if needs_key && has_key => "Key saved",
                 _ if needs_key => "Needs a key",
                 _ => "",
@@ -374,7 +369,6 @@ impl Dialogs {
             .gap(px(16.))
             .child(caps("What runs the agent", cx))
             .child(list)
-            .when(current == "lsuite" && !signed, |d| d.child(Button::new("agent-sign-in", "Sign in to lsuite AI").primary().with_icon("log-in").on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("account.signIn", json!({}), cx)))))
             .child(div().flex().flex_col().gap(px(6.)).child(caps(format!("API key · {key_for}"), cx)).child(self.key_input.clone()).child(div().text_size(px(sz::SM)).text_color(t.text_2).child(format!("Press Enter to save it in the {}. It never leaves this computer except to its provider.", crate::ui::keychain_name()))))
             .child(caps("Your own agent, outside nori", cx))
             .child(div().text_size(px(sz::SM)).text_color(t.text_2).child("Claude Code, Codex, Cursor or Claude Desktop can drive nori through its MCP server, with the same commands (and the same permissions) as the Agent panel:"))
@@ -598,44 +592,10 @@ fn appearance_section(cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-fn account_section(cx: &App) -> AnyElement {
-    let t = cx.theme().clone();
-    let s = cx.store().read(cx);
-    let acc = s.account.clone();
-    let signed = acc["signedIn"] == json!(true);
-    let server = nori_control::account::server();
-    let manage = format!("{server}/account");
-    let mut col = div().flex().flex_col().gap(px(14.)).child(div().flex().items_center().gap(px(12.)).child(logo("lsuite", px(36.))).child(div().flex().flex_col().child(div().text_size(px(sz::LG)).font_weight(FontWeight::SEMIBOLD).child("lsuite AI")).child(div().text_size(px(sz::SM)).text_color(t.text_2).child("No setup. Sign in and your agent works — in every lsuite app."))));
-    if signed {
-        let email = acc["account"]["email"].as_str().unwrap_or("").to_string();
-        let plan = acc["plan"].as_str().or(acc["account"]["plan"].as_str()).unwrap_or("").to_string();
-        let usage = &acc["usage"];
-        let used = usage["used"].as_f64();
-        let limit = usage["limit"].as_f64();
-        let line = match (used, limit) {
-            (Some(u), Some(l)) if l > 0.0 => format!("{} · {:.0} % used{}", if plan.is_empty() { "No plan".into() } else { capital(&plan) }, u / l * 100.0, usage["resetsAt"].as_str().and_then(|r| chrono::DateTime::parse_from_rfc3339(r).ok()).map(|d| format!(" · resets {}", d.format("%-d %b"))).unwrap_or_default()),
-            _ => if plan.is_empty() { "No plan yet".into() } else { capital(&plan) },
-        };
-        col = col
-            .child(div().flex().flex_col().gap(px(4.)).p(px(12.)).border_1().border_color(t.line_strong).child(div().font_weight(FontWeight::MEDIUM).child(email)).child(div().font_family(MONO).text_size(px(sz::SM)).text_color(t.text_2).child(line)).when_some(acc["error"].as_str().map(str::to_string), |d, e| d.child(div().text_size(px(sz::SM)).text_color(t.danger).child(e))))
-            .child(div().flex().gap(px(8.)).child(Button::new("manage-plan", "Manage plan").with_icon("external-link").on_click(move |_, _, cx| cx.open_url(&manage))).child(Button::new("sign-out", "Sign out").with_icon("log-out").on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("account.signOut", json!({}), cx)))));
-    } else {
-        col = col
-            .child(div().text_size(px(sz::SM)).text_color(t.text_2).child("Signing in opens your browser; pick a plan there (a demo for now: nothing is charged) and press Connect nori. Your own Claude Code, Codex, API keys or Ollama stay free and work without it."))
-            .child(div().flex().gap(px(8.)).child(Button::new("sign-in", "Sign in").primary().with_icon("log-in").on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("account.signIn", json!({}), cx)))).child(Button::new("see-plans", "See plans").with_icon("external-link").on_click(move |_, _, cx| cx.open_url(&manage))));
-    }
-    col.child(div().font_family(MONO).text_size(px(sz::XS)).text_color(t.text_3).child(format!("Server: {server}"))).into_any_element()
-}
-
 /// The line that adds nori's MCP server to Claude Code (`nori-cli mcp-config` has the others).
 fn mcp_line(data_dir: &std::path::Path) -> String {
     let mcp = nori_control::discovery::entry(data_dir, None).mcp.map(|p| p.display().to_string()).unwrap_or_else(|| crate::ui::mcp_fallback().into());
     format!("claude mcp add nori -- {} --live", crate::ui::shell_quote(&mcp))
-}
-
-fn capital(s: &str) -> String {
-    let mut c = s.chars();
-    c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }
 
 fn about_section(cx: &App) -> AnyElement {
@@ -715,7 +675,7 @@ impl Render for Dialogs {
         let dialog = self.store.read(cx).dialog.clone();
         if let Some(Dialog::Settings { section: Some(sec) }) = &dialog
             && self.section != *sec
-            && ["appearance", "agent", "account", "updates", "about"].contains(&sec.as_str())
+            && ["appearance", "agent", "updates", "about"].contains(&sec.as_str())
         {
             self.section = sec.clone();
             self.store.update(cx, |s, _| s.dialog = Some(Dialog::Settings { section: None }));
@@ -739,7 +699,6 @@ fn update_controls(cx: &App) -> AnyElement {
     let s = store.read(cx);
     let status = nori_control::update::status(&s.session);
     let message = if let Some(error) = &status.error { error.clone() }
-        else if let Some(sign_in) = &status.sign_in { sign_in.clone() }
         else if status.ready { "Update installed. Restart to use it.".into() }
         else if let Some(p) = status.progress { format!("Downloading and verifying: {:.0}%", p * 100.) }
         else if let Some(version) = &status.available { format!("nori {version} is available.") }
@@ -753,10 +712,9 @@ fn update_controls(cx: &App) -> AnyElement {
             .child(Button::new("check-updates-now", "Check now").small().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("app.checkUpdates", json!({}), cx))))
             .when(status.can_install && status.progress.is_none() && !status.ready, |d| d.child(Button::new("install-update", "Install update").small().primary().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("app.installUpdate", json!({}), cx)))))
             .when(status.ready, |d| d.child(Button::new("restart-update", "Restart nori").small().primary().on_click(|_, _, cx| cx.store().update(cx, |s, cx| s.run("app.restart", json!({}), cx)))))
-            .when((status.available.is_some() || status.sign_in.is_some()) && !status.can_install && !status.ready, |d| {
+            .when(status.available.is_some() && !status.can_install && !status.ready, |d| {
                 let url = status.download_url.clone().unwrap_or_else(|| nori_control::update::manifest_source().downloads());
-                let label = if status.sign_in.is_some() { "Open the lsuite app" } else { "Get the update" };
-                d.child(Button::new("download-update", label).small().on_click(move |_, _, cx| cx.open_url(&url)))
+                d.child(Button::new("download-update", "Get the update").small().on_click(move |_, _, cx| cx.open_url(&url)))
             }))
         .children(status.install_blocked.map(|message| div().text_size(px(sz::SM)).child(message)))
         .into_any_element()

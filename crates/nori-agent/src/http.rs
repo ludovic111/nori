@@ -11,10 +11,6 @@ use crate::tools::bounded;
 /// Longest stream line (one SSE `data:` record or NDJSON object).
 const LINE_LIMIT: usize = 8 * 1024 * 1024;
 
-/// lsuite AI's own refusals (AI.md): their message is one line to show as it is, and the person
-/// can do something about it on the account page (`manage_url`). Never retried.
-const LSUITE_REFUSALS: &[&str] = &["allowance_exhausted", "plan_required", "model_not_in_plan"];
-
 pub fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(20))
@@ -25,33 +21,10 @@ pub fn client() -> reqwest::Client {
         .unwrap_or_default()
 }
 
-/// A request that failed: the line to show, and what the service said about it.
-#[derive(Debug, Clone)]
-pub struct HttpError {
-    pub message: String,
-    pub status: Option<u16>,
-    /// `error.type` from the body (`allowance_exhausted`, `authentication_error`…).
-    pub kind: Option<String>,
-    /// Where the plan is managed, for lsuite AI's refusals.
-    pub manage_url: Option<String>,
-}
-
-impl HttpError {
-    fn plain(message: String) -> Self {
-        Self { message, status: None, kind: None, manage_url: None }
-    }
-}
-
-impl From<HttpError> for String {
-    fn from(e: HttpError) -> String {
-        e.message
-    }
-}
-
 /// POSTs `body` and returns the response once it is 2xx. Rate limits, overload and connection
 /// failures are retried twice with a pause; other errors come back with the service's own
-/// message (lsuite AI's refusals exactly as the server words them).
-pub async fn post(cancel: &CancellationToken, label: &str, build: impl Fn() -> reqwest::RequestBuilder, body: &Value) -> Result<reqwest::Response, HttpError> {
+/// message.
+pub async fn post(cancel: &CancellationToken, label: &str, build: impl Fn() -> reqwest::RequestBuilder, body: &Value) -> Result<reqwest::Response, String> {
     let mut attempt = 0;
     loop {
         attempt += 1;
@@ -60,38 +33,26 @@ pub async fn post(cancel: &CancellationToken, label: &str, build: impl Fn() -> r
             Ok(r) => {
                 let status = r.status().as_u16();
                 let text = r.text().await.unwrap_or_default();
-                let v: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
-                let kind = v["error"]["type"].as_str().map(str::to_string);
-                if let Some(k) = kind.as_deref().filter(|k| LSUITE_REFUSALS.contains(k)) {
-                    let message = v["error"]["message"].as_str().map(one_line).unwrap_or_else(|| format!("{label} refused the request ({k})."));
-                    return Err(HttpError { message, status: Some(status), kind, manage_url: v["error"]["manage_url"].as_str().map(str::to_string) });
-                }
                 let message = format!("{label} error {status}: {}", api_error(&text));
                 if !matches!(status, 408 | 409 | 429 | 500 | 502 | 503 | 504 | 529) || attempt > 2 {
-                    return Err(HttpError { message: hint(label, status, message), status: Some(status), kind, manage_url: None });
+                    return Err(hint(status, message));
                 }
                 message
             }
-            Err(e) if attempt > 2 || !(e.is_connect() || e.is_timeout()) => return Err(HttpError::plain(format!("Couldn't reach {label}: {e}"))),
+            Err(e) if attempt > 2 || !(e.is_connect() || e.is_timeout()) => return Err(format!("Couldn't reach {label}: {e}")),
             Err(e) => e.to_string(),
         };
         tracing::debug!("{label}: retrying after {retry}");
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_secs(2 * attempt as u64)) => {}
-            _ = cancel.cancelled() => return Err(HttpError::plain("Stopped".into())),
+            _ = cancel.cancelled() => return Err("Stopped".into()),
         }
     }
 }
 
-fn one_line(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-fn hint(label: &str, status: u16, message: String) -> String {
-    let lsuite = label.starts_with("lsuite AI");
+fn hint(status: u16, message: String) -> String {
     match status {
-        401 if lsuite => format!("{message}\nSign in to lsuite AI again in Settings › Account."),
-        401 | 403 if !lsuite => format!("{message}\nCheck the API key in Settings › Agent."),
+        401 | 403 => format!("{message}\nCheck the API key in Settings › Agent."),
         404 => format!("{message}\nCheck the model name and address in Settings › Agent."),
         _ => message,
     }

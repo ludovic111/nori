@@ -1,6 +1,6 @@
 //! The first-run setup: what nori is, which editors the person comes from (with what nori opens
-//! from each), and how the agent runs (lsuite AI first). Everything here can be changed later in
-//! Settings; skipping is fine.
+//! from each), and which of the person's own models runs the agent. Everything here can be
+//! changed later in Settings; skipping is fine.
 
 use gpui::{AnyElement, Context, Entity, FontWeight, MouseButton, Render, SharedString, Subscription, Window, div, prelude::*, px};
 use serde_json::json;
@@ -95,33 +95,16 @@ impl Render for Onboarding {
                     .into_any_element()
             }
             "agent" => {
-                let signed = self.store.read(cx).account["signedIn"] == json!(true);
                 let provider = self.store.read(cx).settings.agent.provider.clone();
-                let others: [(&str, &str); 5] = [("claude-code", "Claude Code"), ("codex", "Codex"), ("anthropic", "Anthropic API"), ("openai", "OpenAI API"), ("ollama", "Ollama")];
+                let providers: [(&str, &str); 5] = [("claude-code", "Claude Code"), ("codex", "Codex"), ("anthropic", "Anthropic API"), ("openai", "OpenAI API"), ("ollama", "Ollama")];
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(16.))
                     .child(div().text_size(px(sz::XXL)).font_weight(FontWeight::SEMIBOLD).child("Your agent"))
                     .child(div().text_color(t.text_2).child("Ask nori's agent to retouch, draw, lay out a page or write a plugin. Everything it does is a step you can undo."))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(14.))
-                            .p(px(16.))
-                            .border_1()
-                            .border_color(if provider == "lsuite" { t.accent } else { t.line_strong })
-                            .child(logo("lsuite", px(36.)))
-                            .child(div().flex_1().flex().flex_col().child(div().font_weight(FontWeight::SEMIBOLD).child("lsuite AI")).child(div().text_size(px(sz::SM)).text_color(t.text_2).child(if signed { "Signed in: your agent works in every lsuite app." } else { "No setup. Sign in and your agent works." })))
-                            .child(if signed {
-                                Button::new("onb-signed", "Signed in").with_icon("check").disabled(true).into_any_element()
-                            } else {
-                                Button::new("onb-sign-in", "Sign in").primary().with_icon("log-in").on_click(|_, _, cx| cx.store().update(cx, |s, cx| { s.run("agent.setProvider", json!({ "provider": "lsuite" }), cx); s.run("account.signIn", json!({}), cx); })).into_any_element()
-                            }),
-                    )
-                    .child(caps("Or bring your own", cx))
-                    .child(div().flex().flex_wrap().gap(px(8.)).children(others.iter().map(|(id, name)| {
+                    .child(caps("What runs it", cx))
+                    .child(div().flex().flex_wrap().gap(px(8.)).children(providers.iter().map(|(id, name)| {
                         let on = provider == *id;
                         let pid = id.to_string();
                         div()

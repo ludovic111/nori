@@ -8,7 +8,7 @@ use crate::registry::call;
 use crate::session::{Session, SessionOptions, Source};
 
 /// A scratch `LSUITE_HOME` for the whole test run (set once: the environment is shared), so no
-/// test reads the account of the person running them, nor their update overrides.
+/// test reads the plugins of the person running them, nor their update overrides.
 pub(crate) fn home() -> &'static std::path::Path {
     static HOME: OnceLock<tempfile::TempDir> = OnceLock::new();
     HOME.get_or_init(|| {
@@ -17,7 +17,7 @@ pub(crate) fn home() -> &'static std::path::Path {
         unsafe {
             std::env::set_var("LSUITE_HOME", d.path());
             std::env::set_var("NORI_NO_SYSTEM_FONTS", "1");
-            std::env::remove_var("LSUITE_ACCOUNT_SERVER");
+            std::env::remove_var("LSUITE_SERVER");
             std::env::remove_var("NORI_UPDATE_URL");
         }
         d
@@ -25,8 +25,8 @@ pub(crate) fn home() -> &'static std::path::Path {
     .path()
 }
 
-/// Tests that sign in or out of lsuite take turns (one account file for the run).
-pub(crate) static ACCOUNT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// Tests that point `LSUITE_SERVER` at a fake server take turns.
+pub(crate) static SERVER: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 pub(crate) fn session() -> (Arc<Session>, tempfile::TempDir) {
     home();
@@ -133,8 +133,8 @@ async fn batches_are_one_step_and_roll_back() {
 async fn permissions_and_validation() {
     let (s, _dir) = session();
     ok(&s, "doc.new", json!({})).await;
-    // Agents can't sign in, build plugins (off by default) or change their own settings.
-    assert!(call(&s, Source::Agent, "account.signIn", json!({})).await.unwrap_err().contains("stays with the person"));
+    // Agents can't choose their own provider, build plugins (off by default) or change their own settings.
+    assert!(call(&s, Source::Agent, "agent.setProvider", json!({ "provider": "codex" })).await.unwrap_err().contains("stays with the person"));
     assert!(call(&s, Source::Mcp, "plugin.build", json!({ "name": "x" })).await.unwrap_err().contains("plugins"));
     assert!(call(&s, Source::Agent, "app.setSetting", json!({ "key": "agent.permissions.plugins", "value": true })).await.is_err());
     // Typos get a hint.
@@ -326,4 +326,15 @@ async fn the_brief_and_skills_are_commands() {
     let k = ok(&s, "harness.skill", json!({ "name": "booklet" })).await;
     assert!(k["markdown"].as_str().unwrap().contains("text_thread"));
     assert!(call(&s, Source::Agent, "harness.skill", json!({ "name": "bookle" })).await.unwrap_err().contains("`booklet`"));
+}
+
+#[test]
+fn settings_saved_with_lsuite_ai_still_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = json!({ "agent": { "provider": "lsuite", "model": "claude-sonnet-5-5" }, "appearance": { "mode": "dark" }, "account": { "server": "https://lsuite.xyz" } });
+    std::fs::write(dir.path().join("settings.json"), old.to_string()).unwrap();
+    let s = crate::settings::Settings::load(dir.path());
+    assert_eq!(s.agent.provider, "claude-code", "lsuite AI is gone: the default provider instead");
+    assert_eq!(s.appearance.mode, "dark", "the rest of the file is kept");
+    assert!(dir.path().join("settings.json").exists());
 }

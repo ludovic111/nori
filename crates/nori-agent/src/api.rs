@@ -1,4 +1,4 @@
-//! The tool loop for the in-process providers (lsuite AI, the model APIs, the local servers):
+//! The tool loop for the in-process providers (the model APIs, the local servers):
 //! ask the model, run the tools it calls through the registry, hand back the results, until it
 //! answers.
 
@@ -7,12 +7,10 @@ mod ollama;
 mod openai;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 use serde_json::Value;
 
 use crate::providers::Wire;
-use crate::status::Action;
 use crate::tools::{Ran, ToolSet, spec_for_tool};
 use crate::{Conversation, Message, Part, ProviderKind, Role, Run, http};
 
@@ -56,20 +54,13 @@ fn tool_budget(wire: Wire) -> (Option<usize>, bool) {
     }
 }
 
-/// The model of the plan the lsuite account is on (`/api/account/me`'s `defaultModel`), if the
-/// server says in time.
-async fn lsuite_default_model(server: &str, token: &str) -> Option<String> {
-    let me = tokio::time::timeout(Duration::from_secs(5), nori_control::account::me(server, token)).await.ok()?.ok()?;
-    me["defaultModel"].as_str().filter(|m| !m.is_empty()).map(str::to_string)
-}
-
 impl Api {
     pub(crate) async fn prepare(run: &Run) -> Result<Self, String> {
         let c = &run.config;
         let info = c.provider.info();
         let http = http::client();
         let base = c.base_url();
-        let mut key = c.api_key(&run.session);
+        let key = c.api_key(&run.session);
         let mut model = c.model();
         let wire = info.wire;
         let missing_key = || {
@@ -80,17 +71,6 @@ impl Api {
         };
         match c.provider {
             ProviderKind::ClaudeCode | ProviderKind::Codex => return Err("This provider runs as a CLI.".into()),
-            ProviderKind::Lsuite => {
-                // The account file can change under us (another lsuite app signs in or out).
-                let Some(account) = nori_control::account::read() else {
-                    run.set_action(Action::call("Sign in to lsuite AI", "account.signIn"));
-                    return Err("Sign in to lsuite AI to use it (Settings › Account), or choose another provider in Settings › Agent.".into());
-                };
-                if c.model.trim().is_empty() {
-                    model = lsuite_default_model(&nori_control::account::server(), &account.token).await.unwrap_or(model);
-                }
-                key = Some(account.token);
-            }
             ProviderKind::OpenAiCompatible if c.base_url.trim().is_empty() => {
                 return Err("Give the server's address in Settings › Agent (for example http://127.0.0.1:1234/v1).".into());
             }
@@ -123,7 +103,7 @@ impl Api {
         Ok(Self { kind: c.provider, wire, http, key, model, base, vision: AtomicBool::new(vision) })
     }
 
-    /// How errors name the service: "OpenAI API", "lsuite AI", or the address of a custom server.
+    /// How errors name the service: "OpenAI API", or the address of a custom server.
     pub(crate) fn label(&self) -> String {
         let info = self.kind.info();
         if info.default_base_url.is_empty() || self.base == info.default_base_url { info.label.to_string() } else { format!("{} at {}", info.label, self.base) }

@@ -36,7 +36,7 @@ pub async fn run(s: &Arc<Session>, cx: &Ctx, a: Args) -> CmdResult {
         "agent.setKey" => {
             let p = a.str("provider")?.trim().to_ascii_lowercase();
             if !AGENT_KEY_IDS.contains(&p.as_str()) {
-                return Err(format!("The agent keeps keys for {}, not `{p}` (lsuite AI signs in; Claude Code, Codex and Ollama need no key).", AGENT_KEY_IDS.join(", ")));
+                return Err(format!("The agent keeps keys for {}, not `{p}` (Claude Code, Codex and Ollama need no key).", AGENT_KEY_IDS.join(", ")));
             }
             s.set_secret(&p, Some(a.str("key")?).filter(|k| !k.trim().is_empty()))?;
             s.emit(Event::SettingsChanged);

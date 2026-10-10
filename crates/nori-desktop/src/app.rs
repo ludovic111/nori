@@ -243,7 +243,7 @@ impl Workspace {
                 let open = params["open"].as_bool() != Some(false);
                 store.update(cx, |s, cx| match panel {
                     "agent" => s.set_agent_open(open, cx),
-                    "settings" | "account" if open => s.open_dialog(Dialog::Settings { section: params["section"].as_str().map(str::to_string).or((panel == "account").then(|| "account".to_string())) }, cx),
+                    "settings" if open => s.open_dialog(Dialog::Settings { section: params["section"].as_str().map(str::to_string) }, cx),
                     "export" if open => s.open_dialog(Dialog::Export, cx),
                     "plugins" if open => s.open_dialog(Dialog::Plugins { tab: None }, cx),
                     "shortcuts" if open => s.open_dialog(Dialog::Shortcuts, cx),

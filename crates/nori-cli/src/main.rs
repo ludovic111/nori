@@ -43,7 +43,7 @@ USAGE
   nori-cli help <command>           one command's parameters
   nori-cli batch [--continue]       run JSON lines from stdin: {\"command\":\"layer.add\",\"params\":{...}}
                                    one JSON result per line; stops at the first error unless --continue
-  nori-cli doctor [--json]          check the running app, versions, folders, the lsuite entry and the account
+  nori-cli doctor [--json]          check the running app, versions, folders and the lsuite entry
   nori-cli mcp-config [--json]      how to add nori-mcp to Claude Code, Codex, Cursor or Claude Desktop
   nori-cli docs [--out PATH]        write the command reference (default docs/COMMANDS.md; - for stdout)
   nori-cli convert <in> <out> [--scale N] [--quality N] [--page N]
@@ -51,7 +51,7 @@ USAGE
                                    WebP, TIFF, BMP, ORA, SVG, PDF, .nori)
   nori-cli --file <f> agent \"<request>\" [--provider P] [--model M] [--max-steps N] [--json]
                                    run nori's built-in agent on a file (or --headless), without the app:
-                                   lsuite AI, claude-code (no key needed), codex, anthropic, openai, ollama…
+                                   claude-code (no key needed), codex, anthropic, openai, ollama…
                                    (default: Settings › Agent); the file is saved at the end
 
 OPTIONS
