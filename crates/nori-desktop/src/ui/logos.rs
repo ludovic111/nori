@@ -56,7 +56,6 @@ pub const LOGOS: &[(&str, Option<LogoFile>)] = &[
     // lsuite.
     ("kimchi", one("kimchi")),
     ("ryolune", one("ryolune")),
-    ("zenith", one("zenith")),
 ];
 
 pub fn logo_file(id: &str) -> Option<LogoFile> {

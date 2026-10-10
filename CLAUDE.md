@@ -102,7 +102,7 @@ strings in the window. `grep -rn nori` finds them all.
 
 ## lsuite
 
-nori is part of **lsuite** with ryolune (music), kimchi (video) and zenith (code); its page is
+nori is part of **lsuite** with ryolune (music), kimchi (video) and folio (documents); its page is
 lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `AI.md`, `design/DESIGN.md`.
 
 - [x] Command registry: `family.verb` (doc, page, layer, raster, brushes, vector, text, select,
