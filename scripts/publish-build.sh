@@ -14,10 +14,10 @@
 #   --dry-run   do everything but create the release (the files stay in a folder it prints)
 #   --replace   the release exists already: upload over its files
 #
-# Linux only during lsuite's beta (macOS and Windows are coming soon): only the targets in
-# NORI_TARGETS (default x86_64-unknown-linux-gnu) are taken, and their jobs must have succeeded,
-# so a run cancelled after its Linux job (or one that built other platforms too) still publishes
-# Linux alone. latest.json then lists only those platforms.
+# Linux and macOS (Windows is coming soon): only the targets in NORI_TARGETS (default
+# x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin) are taken, and each of their
+# jobs must have succeeded. latest.json then lists exactly those platforms (darwin-aarch64,
+# darwin-x86_64, linux-x86_64 and their installer-specific keys).
 #
 # Needs gh (signed in, with access to both repositories) and cargo. SHA256SUMS is signed too
 # (SHA256SUMS.sig) when TAURI_SIGNING_PRIVATE_KEY holds nori's update key. NORI_BUILD_REPO and
@@ -53,7 +53,7 @@ version="${version#v}"
 
 build_repo="${NORI_BUILD_REPO:-ludovic111/kimchi}"
 builds_repo="${LSUITE_BUILDS_REPO:-ludovic111/lsuite-builds}"
-read -r -a targets <<< "${NORI_TARGETS:-x86_64-unknown-linux-gnu}"
+read -r -a targets <<< "${NORI_TARGETS:-x86_64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin}"
 tag="nori-v$version"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 command -v gh > /dev/null || die "gh (GitHub CLI) is needed"

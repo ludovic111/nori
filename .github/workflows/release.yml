@@ -1,7 +1,8 @@
 name: Release
 
-# Builds nori for macOS (Apple Silicon + Intel), Windows and Linux with the scripts in scripts/
-# and attaches everything to a draft GitHub release. Publish the draft to ship it.
+# Builds nori for Linux and macOS (Apple Silicon + Intel, both on the Mac mini, Intel
+# cross-compiled) with the scripts in scripts/ and attaches everything to a draft GitHub release.
+# Publish the draft to ship it. Windows is coming soon (its row stays commented out).
 #
 # Asset names are stable (no version) so lsuite.xyz/nori/download/<platform> always finds them:
 # nori_aarch64.dmg, nori_x64.dmg, nori_{aarch64,x64}.app.tar.gz, nori_x64-setup.exe,
@@ -19,7 +20,8 @@ concurrency:
 jobs:
   build:
     name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
+    # macOS rows run on the Mac mini (MAC_RUNNER=macos-latest sends them back to GitHub).
+    runs-on: ${{ matrix.mac && (vars.MAC_RUNNER || 'ludovics-mac-mini') || matrix.os }}
     timeout-minutes: 90
     env:
       HAS_APPLE_SIGNING: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 != '' && secrets.APPLE_API_KEY_P8_BASE64 != '' }}
@@ -27,9 +29,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux only while lsuite is in beta; macOS and Windows are coming soon:
-          # - { name: macOS (Apple Silicon), os: macos-latest, target: aarch64-apple-darwin, script: bundle-macos.sh }
-          # - { name: macOS (Intel), os: macos-15-intel, target: x86_64-apple-darwin, script: bundle-macos.sh }
+          - { name: macOS (Apple Silicon), mac: true, target: aarch64-apple-darwin, script: bundle-macos.sh }
+          - { name: macOS (Intel), mac: true, target: x86_64-apple-darwin, script: bundle-macos.sh }
+          # Windows is coming soon:
           # - { name: Windows, os: windows-latest, target: x86_64-pc-windows-msvc, script: bundle-windows.sh }
           - { name: Linux, os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, script: bundle-linux.sh }
     defaults:
@@ -37,6 +39,9 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          # On the Mac mini, keep target/ between runs (incremental builds).
+          clean: ${{ runner.environment == 'github-hosted' }}
 
       - name: Check the tag matches the version
         if: startsWith(github.ref, 'refs/tags/')
@@ -68,6 +73,7 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
         with:
           key: ${{ matrix.target }}
 
@@ -94,7 +100,10 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then test "$HAS_APPLE_SIGNING" = true; fi
 
       - name: Build and package
-        run: bash scripts/${{ matrix.script }} ${{ runner.os == 'macOS' && matrix.target || '' }}
+        # target/dist may hold another job's files on the Mac mini (target/ is kept): start clean.
+        run: |
+          rm -rf target/dist
+          bash scripts/${{ matrix.script }} ${{ runner.os == 'macOS' && matrix.target || '' }}
 
       - name: Sign and verify updater archives
         env:
@@ -108,18 +117,27 @@ jobs:
             target/release/nori-release verify "$file" --version "$version"
           done
 
+      # The Mac mini runs as its owner: put the keychain search list back exactly as it was, then
+      # delete the throwaway keychain (the default keychain is never touched).
       - name: Remove signing keychain
         if: always() && runner.os == 'macOS'
         run: |
+          if [ -f "$RUNNER_TEMP/keychains-before" ]; then
+            keychains=()
+            while IFS= read -r k; do [ -n "$k" ] && keychains+=("$k"); done < "$RUNNER_TEMP/keychains-before"
+            security list-keychains -d user -s ${keychains[@]+"${keychains[@]}"}
+          fi
           if [ -f "$RUNNER_TEMP/signing.keychain-db" ]; then security delete-keychain "$RUNNER_TEMP/signing.keychain-db"; fi
-          rm -f "$RUNNER_TEMP/notary.p8"
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/keychains-before"
 
       - uses: actions/upload-artifact@v4
         with:
           name: nori-${{ matrix.target }}
           path: |
-            target/dist/nori-linux-*.AppImage
-            target/dist/nori-linux-*.deb
+            target/dist/nori_*.dmg
+            target/dist/nori_*.app.tar.gz
+            target/dist/nori_*.AppImage
+            target/dist/nori_*.deb
             target/dist/*.sig
           if-no-files-found: error
 
@@ -143,17 +161,18 @@ jobs:
             awk -v v="$version" '/^## /{p = ($2 == v); next} p' CHANGELOG.md | sed -e '/./,$!d' > "$RUNNER_TEMP/notes.md"
           fi
           if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
-            echo "nori $version: documents, sheets and slides in one file." > "$RUNNER_TEMP/notes.md"
+            echo "nori $version: pictures, drawings and pages in one app." > "$RUNNER_TEMP/notes.md"
           fi
           cat >> "$RUNNER_TEMP/notes.md" <<'NOTES'
 
           ### Download
           Download the build for your system below.
 
+          - **macOS**: `nori_aarch64.dmg` (Apple Silicon) or `nori_x64.dmg` (Intel).
           - **Linux**: `nori_amd64.AppImage` or `nori_amd64.deb`.
-          - **macOS and Windows**: coming soon (lsuite is in beta on Linux).
+          - **Windows**: coming soon.
           NOTES
-          (cd dist && sha256sum nori-* > SHA256SUMS)
+          (cd dist && sha256sum -- * > "$RUNNER_TEMP/SHA256SUMS" && mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS)
           ls -l dist
 
       - uses: dtolnay/rust-toolchain@stable

@@ -2,8 +2,10 @@
 
 ## Unreleased
 
-lsuite is fully free: no account, no paid plan.
+lsuite is fully free: no account, no paid plan. And nori ships for macOS again.
 
+- **Linux and macOS.** nori is built for macOS (Apple Silicon and Intel: `nori_aarch64.dmg`,
+  `nori_x64.dmg`, and the updater's `.app.tar.gz`) as well as Linux. Windows is coming soon.
 - **No lsuite account.** Updates come from lsuite.xyz without signing in
   (`<server>/api/apps/nori/latest.json`, no `Authorization` header; `LSUITE_SERVER` replaces
   `LSUITE_ACCOUNT_SERVER`). Settings › Updates no longer asks to sign in. An old
