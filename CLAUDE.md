@@ -122,11 +122,14 @@ lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `design/DESIGN
       Marketplace. The agent runs on the person's own model only; updates need no account
       (`LSUITE_SERVER` replaces `LSUITE_ACCOUNT_SERVER`); an old `~/.lsuite/account.json` is
       ignored, never deleted. Settings saved with the `lsuite` provider load with Claude Code.
-- **Linux only during the beta** (owner's decision, 2026-10-08): macOS and Windows are "coming
-      soon". Their code stays in the source (GPUI backends, `bundle-macos.sh`,
-      `bundle-windows.sh`, the updater's platform keys), but CI, the release workflow and
-      `publish-build.sh` build and ship Linux only, and every release's `latest.json` lists only
-      Linux platforms.
+- **Linux and macOS** (owner's request, 2026-10-10; the beta was Linux only from 2026-10-08):
+      macOS (Apple Silicon and Intel, cross-compiled) builds on the owner's Mac mini, a
+      self-hosted runner (`vars.MAC_RUNNER || 'ludovics-mac-mini'`; it runs as his own account,
+      so workflows leave no trace: no global git config, `~/.ssh` or login keychain; the signing
+      keychain is a throwaway in `$RUNNER_TEMP` and the search list is restored). CI's macOS job
+      runs only on `workflow_dispatch`; the release workflow and `publish-build.sh`
+      (`NORI_TARGETS`) ship Linux and both Macs. Windows is "coming soon": its code and
+      `bundle-windows.sh` stay, its matrix row stays commented out.
 - [x] Agent harness (HARNESS.md, 0.2): 1 expert brief (`harness/brief.md`, ~1,300 words, the
       Agent panel's system prompt and nori-mcp's instructions; a test keeps it 800–1,500 words);
       2 eleven skills (`harness/skills/*.md`, MCP prompts and `nori://skills/<name>`; a test

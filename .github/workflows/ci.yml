@@ -19,17 +19,20 @@ concurrency:
 jobs:
   rust:
     name: Rust (${{ matrix.os }})
-    runs-on: ${{ (matrix.os == 'ubuntu-22.04' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && (vars.LINUX_RUNNER || 'ludodesktop') || matrix.os }}
+    # Our own machines (ludodesktop for Linux, the Mac mini for macOS) never run a fork's pull
+    # request: those go to GitHub's runners.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.os == 'macos' && (vars.MAC_RUNNER || 'ludovics-mac-mini') || vars.LINUX_RUNNER || 'ludodesktop') || (matrix.os == 'macos' && 'macos-latest' || matrix.os) }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        # Linux only while lsuite is in beta (macOS and Windows are coming soon; their code stays).
-        os: [ubuntu-22.04]
+        # Linux on every push; macOS (the Mac mini) only when started by hand:
+        # gh workflow run CI --ref <branch>. Windows is coming soon.
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-22.04", "macos"]' || '["ubuntu-22.04"]') }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # On ludodesktop, keep target/ between runs (incremental builds).
+          # On our own runners, keep target/ between runs (incremental builds).
           clean: ${{ runner.environment == 'github-hosted' }}
       # GPUI's Linux backends (X11 + Wayland, Vulkan, fontconfig) and the keychain (D-Bus).
       - name: Linux dependencies
@@ -41,7 +44,8 @@ jobs:
             libzstd-dev libglib2.0-dev
       - name: Own Rust install per repo on ludodesktop
         # The runners of several repos run at once; a shared ~/.rustup makes their installs collide.
-        if: runner.environment == 'self-hosted'
+        # (The Mac mini's runners already have their own RUSTUP_HOME and CARGO_HOME.)
+        if: runner.environment == 'self-hosted' && runner.os == 'Linux'
         run: |
           echo "RUSTUP_HOME=$HOME/.rustup-${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
           echo "CARGO_HOME=$HOME/.cargo-${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"

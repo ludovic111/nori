@@ -9,7 +9,7 @@
 
 <h1 align="center">nori</h1>
 
-<p align="center"><strong>Pictures, drawings and pages in one app.</strong> (beta, Linux; macOS and Windows coming soon)<br/>
+<p align="center"><strong>Pictures, drawings and pages in one app.</strong> (beta, Linux and macOS; Windows coming soon)<br/>
 Native Rust app (GPUI) · drivable by your AI (MCP, CLI, built-in agent).<br/>
 Part of <a href="https://lsuite.xyz">lsuite</a>, the free, open-source creative suite your AI can drive.</p>
 
@@ -45,13 +45,16 @@ beta.
 
 ## Install
 
-nori is in beta for **Linux**; macOS and Windows are coming soon. Download the file from the
+nori is in beta for **Linux** and **macOS** (Apple Silicon and Intel); Windows is coming soon.
+Download the file from the
 [latest release](https://github.com/ludovic111/nori/releases/latest):
 
 | System | File |
 | --- | --- |
+| macOS, Apple Silicon | `nori_aarch64.dmg` |
+| macOS, Intel | `nori_x64.dmg` |
 | Linux | `nori_amd64.AppImage` or `nori_amd64.deb` |
-| macOS, Windows | coming soon |
+| Windows | coming soon |
 
 Signed app updates are available in Settings → Updates (no account needed); checksums and
 signatures are verified before installation.
@@ -127,12 +130,13 @@ Rust 1.92 or later. Linux needs GPUI's usual libraries (see
 cargo run -p nori                 # the app
 cargo run -p nori-cli -- --help   # the CLI
 cargo test --workspace
-scripts/bundle-linux.sh           # the AppImage and .deb (macOS and Windows bundles: coming soon)
+scripts/bundle-linux.sh           # the AppImage and .deb
+scripts/bundle-macos.sh           # nori.app, a .dmg and the updater's .app.tar.gz (on a Mac)
 ```
 
 ### Release builds
 
-nori's builds come to people through the lsuite app (lsuite's DISTRIBUTION.md). The suite workflow in `ludovic111/kimchi/.github/workflows/suite-build.yml` builds and signs an exact nori commit for Linux (macOS and Windows are coming soon: their code stays, but they are neither built nor shipped during the beta); `scripts/publish-build.sh <version> <run-id>` then checks every signature, writes `latest.json` and `SHA256SUMS`, and creates `nori-v<version>` in the private `ludovic111/lsuite-builds` (try `--dry-run` first). The repository's standalone release workflow is manual and refuses unsigned releases when credentials are missing.
+nori's builds come to people through the lsuite app (lsuite's DISTRIBUTION.md). The suite workflow in `ludovic111/kimchi/.github/workflows/suite-build.yml` builds and signs an exact nori commit for Linux and macOS (Apple Silicon and Intel; Windows is coming soon: its code stays, but it is neither built nor shipped during the beta); `scripts/publish-build.sh <version> <run-id>` then checks every signature, writes `latest.json` and `SHA256SUMS`, and creates `nori-v<version>` in the private `ludovic111/lsuite-builds` (try `--dry-run` first). The repository's standalone release workflow is manual and refuses unsigned releases when credentials are missing.
 
 ## Limits
 
