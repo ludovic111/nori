@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-11
 
 lsuite is fully free: no account, no paid plan. And nori ships for macOS again.
+
+nori is in beta for **Linux** (AppImage and .deb) and **macOS** (Apple Silicon and Intel);
+Windows is coming soon.
 
 - **Linux and macOS.** nori is built for macOS (Apple Silicon and Intel: `nori_aarch64.dmg`,
   `nori_x64.dmg`, and the updater's `.app.tar.gz`) as well as Linux. Windows is coming soon.

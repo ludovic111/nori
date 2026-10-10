@@ -3933,7 +3933,7 @@ checksum = "0676bb32a98c1a483ce53e500a81ad9c3d5b3f7c920c28c24e9cb0980d0b5bc8"
 
 [[package]]
 name = "nori"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3966,7 +3966,7 @@ dependencies = [
 
 [[package]]
 name = "nori-agent"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "futures",
@@ -3986,7 +3986,7 @@ dependencies = [
 
 [[package]]
 name = "nori-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "nori-agent",
  "nori-control",
@@ -3998,7 +3998,7 @@ dependencies = [
 
 [[package]]
 name = "nori-control"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -4032,7 +4032,7 @@ dependencies = [
 
 [[package]]
 name = "nori-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "image",
@@ -4053,7 +4053,7 @@ dependencies = [
 
 [[package]]
 name = "nori-evals"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "futures",
@@ -4076,7 +4076,7 @@ dependencies = [
 
 [[package]]
 name = "nori-io"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "flate2",
@@ -4097,7 +4097,7 @@ dependencies = [
 
 [[package]]
 name = "nori-mcp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "nori-cli",
  "nori-control",
@@ -4108,11 +4108,11 @@ dependencies = [
 
 [[package]]
 name = "nori-plugin"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "nori-release"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "minisign",
@@ -4123,7 +4123,7 @@ dependencies = [
 
 [[package]]
 name = "nori-render"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cosmic-text",
  "i_overlay",
