@@ -1,6 +1,6 @@
 name: Release
 
-# Builds nori for Linux and macOS (Apple Silicon + Intel, both on the Mac mini, Intel
+# Builds nori for Linux and macOS (Apple Silicon + Intel, both on a self-hosted Mac, Intel
 # cross-compiled) with the scripts in scripts/ and attaches everything to a draft GitHub release.
 # Publish the draft to ship it. Windows is coming soon (its row stays commented out).
 #
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build:
     name: ${{ matrix.name }}
-    # macOS rows run on the Mac mini (MAC_RUNNER=macos-latest sends them back to GitHub).
+    # macOS rows run on the self-hosted Mac (MAC_RUNNER=macos-latest sends them back to GitHub).
     runs-on: ${{ matrix.mac && (vars.MAC_RUNNER || 'ludovics-mac-mini') || matrix.os }}
     timeout-minutes: 90
     env:
@@ -40,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # On the Mac mini, keep target/ between runs (incremental builds).
+          # On the self-hosted Mac, keep target/ between runs (incremental builds).
           clean: ${{ runner.environment == 'github-hosted' }}
 
       - name: Check the tag matches the version
@@ -100,7 +100,7 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then test "$HAS_APPLE_SIGNING" = true; fi
 
       - name: Build and package
-        # target/dist may hold another job's files on the Mac mini (target/ is kept): start clean.
+        # target/dist may hold another job's files on the self-hosted Mac (target/ is kept): start clean.
         run: |
           rm -rf target/dist
           bash scripts/${{ matrix.script }} ${{ runner.os == 'macOS' && matrix.target || '' }}
@@ -117,7 +117,7 @@ jobs:
             target/release/nori-release verify "$file" --version "$version"
           done
 
-      # The Mac mini runs as its owner: put the keychain search list back exactly as it was, then
+      # The self-hosted Mac runs as its owner's account: put the keychain search list back exactly as it was, then
       # delete the throwaway keychain (the default keychain is never touched).
       - name: Remove signing keychain
         if: always() && runner.os == 'macOS'

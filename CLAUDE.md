@@ -76,7 +76,7 @@ strings in the window. `grep -rn nori` finds them all.
 
 ## Decisions (2026-10-07, the first night)
 
-- One document open at a time (tabs later). Opening a picture makes an unsaved document; Save
+- Several documents open in tabs, each with its own undo history. Opening a picture makes an unsaved document; Save
   writes a `.nori` and never overwrites the picture; Export writes pictures. `nori-cli --file
   photo.jpg` saves to `photo.nori` beside it for the same reason.
 - Pages and artboards are the same thing (`Page` with a pasteboard position). Master pages are
@@ -85,7 +85,8 @@ strings in the window. `grep -rn nori` finds them all.
   and multi-page documents start with a "Paper" fill layer per page (no pixels to keep).
 - Text: point text or frames; a thread's words live in its first frame; paragraph styles copy
   their values into the layers that use them (changing the style re-sets them); character styles
-  apply through runs. PDF and SVG keep text as outlines (vectors, sharp, not yet selectable).
+  apply through runs. PDF export keeps ordinary text selectable (embedded glyphs); SVG export and
+  PDF import keep text as outlines.
 - PDF and SVG flatten what they can't express (adjustment layers, masks, clipping, blend modes
   PDF lacks) together with everything under it, and keep the rest as vectors (`nori-io/plan.rs`).
 - Plugins are filters for now (RGBA f32 premultiplied tiles, typed parameters, a margin for
@@ -123,8 +124,9 @@ lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `design/DESIGN
       (`LSUITE_SERVER` replaces `LSUITE_ACCOUNT_SERVER`); an old `~/.lsuite/account.json` is
       ignored, never deleted. Settings saved with the `lsuite` provider load with Claude Code.
 - **Linux and macOS** (owner's request, 2026-10-10; the beta was Linux only from 2026-10-08):
-      macOS (Apple Silicon and Intel, cross-compiled) builds on the owner's Mac mini, a
-      self-hosted runner (`vars.MAC_RUNNER || 'ludovics-mac-mini'`; it runs as his own account,
+      macOS (Apple Silicon and Intel, cross-compiled) builds on the maintainer's self-hosted Mac
+      runner (`vars.MAC_RUNNER`, else the default label in the workflow; it runs as the
+      maintainer's own account,
       so workflows leave no trace: no global git config, `~/.ssh` or login keychain; the signing
       keychain is a throwaway in `$RUNNER_TEMP` and the search list is restored). CI's macOS job
       runs only on `workflow_dispatch`; the release workflow and `publish-build.sh`
@@ -142,13 +144,16 @@ lsuite.xyz/nori. Contract: `../lsuite/STANDARD.md`, `PLUGINS.md`, `design/DESIGN
 - [x] Evals for 0.2.0: all twelve with Claude Code on Opus, 12/12 (evals/RESULTS.md).
 - [ ] Harness next: run all twelve evals on each release candidate; a vision-free fallback for
       local models that can't see (they get the checks' numbers only).
-- [ ] Not done: tabs (several documents), smart objects, a curves graph editor (presets and
-      `layer.setAdjustment` only), selectable text in PDF, PSD and IDML export, XCF and `.ai`
-      import, pen pressure from tablets (the engine takes pressure; the window sends 1).
+- [x] Since the first beta: tabs (several documents), smart objects (`layer.*SmartObject`), a
+      draggable curves graph, selectable text in PDF export, layered PSD and IDML export, XCF
+      (8-bit, versions 0-13) and PDF-compatible `.ai` import, tablet pressure on macOS.
+- [ ] Not done: tablet pressure on Linux and Windows (the pinned GPUI backend gives no tablet
+      samples; the canvas sends full pressure, the command API takes samples everywhere); real
+      tablet hardware is still unverified on macOS; PSD and IDML round trips are tested
+      automatically but not yet opened in Photoshop or InDesign; Windows builds.
 
-## Verified local beta (2026-10-07)
+## Release state (0.3.0, 2026-10-11)
 
-App names are always lowercase in UI and documentation. Apple silicon bundles were built on
-macmini under `~/builds/lsuite-2026-10-07/` and smoke-tested through their bundled CLIs. These
-are local ad-hoc-signed builds; public release, notarization and signed in-place updates remain
-separate release work. Linux workspace tests and clippy passed (existing warnings remain).
+App names are always lowercase in UI and documentation. 0.3.0 is published to lsuite-builds for
+Linux (AppImage, .deb) and macOS (Apple Silicon and Intel `.dmg`, signed with the Developer ID
+and notarized, plus the updater's `.app.tar.gz`), with `latest.json` and `SHA256SUMS`.
