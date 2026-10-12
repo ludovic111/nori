@@ -19,14 +19,14 @@ concurrency:
 jobs:
   rust:
     name: Rust (${{ matrix.os }})
-    # Our own machines (ludodesktop for Linux, the Mac mini for macOS) never run a fork's pull
-    # request: those go to GitHub's runners.
+    # The maintainer's self-hosted runners (Linux and macOS) never run a fork's pull request:
+    # those go to GitHub's runners.
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.os == 'macos' && (vars.MAC_RUNNER || 'ludovics-mac-mini') || vars.LINUX_RUNNER || 'ludodesktop') || (matrix.os == 'macos' && 'macos-latest' || matrix.os) }}
-    timeout-minutes: 120  # the ThinkPad (4 threads) builds from cold in over an hour
+    timeout-minutes: 120  # a 4-thread self-hosted runner builds from cold in over an hour
     strategy:
       fail-fast: false
       matrix:
-        # Linux on every push; macOS (the Mac mini) only when started by hand:
+        # Linux on every push; macOS (the self-hosted Mac) only when started by hand:
         # gh workflow run CI --ref <branch>. Windows is coming soon.
         os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["ubuntu-22.04", "macos"]' || '["ubuntu-22.04"]') }}
     steps:
@@ -42,9 +42,9 @@ jobs:
           sudo apt-get install -y pkg-config clang libasound2-dev libdbus-1-dev libfontconfig-dev libfreetype-dev \
             libssl-dev libvulkan-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
             libzstd-dev libglib2.0-dev
-      - name: Own Rust install per repo on ludodesktop
+      - name: Own Rust install per repo on the self-hosted Linux runner
         # The runners of several repos run at once; a shared ~/.rustup makes their installs collide.
-        # (The Mac mini's runners already have their own RUSTUP_HOME and CARGO_HOME.)
+        # (The self-hosted Mac's runners already have their own RUSTUP_HOME and CARGO_HOME.)
         if: runner.environment == 'self-hosted' && runner.os == 'Linux'
         run: |
           echo "RUSTUP_HOME=$HOME/.rustup-${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
